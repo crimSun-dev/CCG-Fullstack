@@ -9,6 +9,15 @@ import { cpSync, existsSync, rmSync } from "node:fs";
 
 const src = "../lab";
 if (!existsSync(`${src}/server/src/app.js`)) {
+  // hPanel's Redeploy restores only web/ from the last build, so ../lab is missing there. With the
+  // lab switched on that build would ship a /lab that answers lab_unavailable: stop it here instead.
+  if (process.env.LAB_DATABASE_URL?.trim()) {
+    console.error(
+      "LAB_DATABASE_URL is set but ../lab is not in this build. hPanel's Redeploy restores only web/;" +
+        " deploy from Git instead (push a commit, or start a deployment from the GitHub repository).",
+    );
+    process.exit(1);
+  }
   console.log("No ../lab: building without CK Virtual Lab");
   process.exit(0);
 }
