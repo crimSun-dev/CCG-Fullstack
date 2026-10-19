@@ -90,9 +90,9 @@ describe("CK Virtual Lab button", () => {
     expect(findAll(el, (e) => e.type === "button")[0].props).toMatchObject({ type: "submit" });
   });
 
-  it("is hidden when the lab hand-off is not configured", () => {
+  it("stays visible when the lab hand-off is not configured", () => {
     labConfigured = false;
-    expect(LabButton({ role: "ADMIN" })).toBeNull();
+    expect(LabButton({ role: "ADMIN" })!.props).toMatchObject({ method: "post", action: "/lab/launch" });
   });
 
   it("is on the staff admin page", async () => {
@@ -127,9 +127,11 @@ describe("POST /lab/launch", () => {
     expect((await post({ origin: "https://evil.example" })).status).toBe(403);
   });
 
-  it("answers 503 when the lab is not configured", async () => {
+  it("sends staff back to admin when the lab is not configured", async () => {
     current = user("ADMIN");
     labConfigured = false;
-    expect((await post()).status).toBe(503);
+    const res = await post();
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toMatch(/\/admin\?error=lab$/);
   });
 });

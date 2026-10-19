@@ -121,7 +121,7 @@ a:hover { text-decoration-color: currentColor; }
 .nav-signin.nav-signin {
   height: 2.5rem; padding-inline: 1rem; color: var(--sc-ink);
   border: 1px solid color-mix(in oklab, var(--sc-ink) 28%, transparent); border-radius: var(--sc-r-sm);
-  transition: border-color var(--sc-d-fast) var(--sc-ease-out), background-color var(--sc-d-fast) var(--sc-ease-out), color var(--sc-d-fast) var(--sc-ease-out);
+  transition: border-color var(--sc-d-fast) var(--sc-ease-out), background-color var(--sc-d-fast) var(--sc-ease-out), color var(--sc-d-fast) var(--sc-ease-out), opacity 180ms var(--sc-ease-out);
 }
 .nav-signin.nav-signin:hover { border-color: var(--ccg-blue); background: color-mix(in oklab, var(--ccg-blue) 14%, transparent); }
 .nav-signin.nav-signin::after { display: none; }
@@ -1032,3 +1032,5 @@ html:not([data-motion="on"]) .hero__stage::before { display: none; }
 .operate .lab-launch__button img { display: block; height: 3rem; width: auto; transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
 .operate .lab-launch__button:hover img { transform: translateY(-1px); }
 .admin-links { display: flex; flex-wrap: wrap; gap: var(--sc-4); }
+/* The account link waits for /api/v1/session, then fades in as "Sign in" or "Your account". */
+.nav-signin.nav-signin[data-pending] { opacity: 0; pointer-events: none; }

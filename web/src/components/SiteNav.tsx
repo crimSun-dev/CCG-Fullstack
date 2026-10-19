@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LogoMark } from "./LogoMark";
 
 const LINKS = [
@@ -13,8 +13,10 @@ const LINKS = [
   ["/team", "Team"],
   ["/locations", "Locations"],
   ["/contact", "Contact"],
-  ["/login", "Sign in"],
 ] as const;
+
+// The last nav item: "Sign in", or "Your account" once the session answers. Unknown until then.
+type Session = "unknown" | "signed-in" | "signed-out";
 
 function isCurrent(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -24,6 +26,20 @@ export function SiteNav() {
   const pathname = usePathname() ?? "/";
   const menu = useRef<HTMLDetailsElement>(null);
   const bar = useRef<HTMLElement>(null);
+  const [session, setSession] = useState<Session>("unknown");
+
+  // Asked again on every navigation, so signing in or out shows up without a reload.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch("/api/v1/session", { cache: "no-store", signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : { signedIn: false }))
+      .then((d: { signedIn?: boolean }) => setSession(d.signedIn ? "signed-in" : "signed-out"))
+      .catch(() => {
+        if (!ctrl.signal.aborted) setSession("signed-out");
+      });
+    return () => ctrl.abort();
+  }, [pathname]);
+  const account = session === "signed-in" ? (["/account", "Your account"] as const) : (["/login", "Sign in"] as const);
 
   // The sliding highlight: a pale bar under the nav that glides to whichever link is hovered or
   // focused, and rests on the current page.
@@ -73,15 +89,22 @@ export function SiteNav() {
     <ul>
       {LINKS.map(([href, label]) => (
         <li key={href}>
-          <Link
-            href={href}
-            className={href === "/login" ? "nav-signin" : undefined}
-            aria-current={isCurrent(pathname, href) ? "page" : undefined}
-          >
+          <Link href={href} aria-current={isCurrent(pathname, href) ? "page" : undefined}>
             {label}
           </Link>
         </li>
       ))}
+      <li>
+        {/* Hidden, not swapped, while the session is unknown: no "Sign in" flash for a signed-in visitor. */}
+        <Link
+          href={account[0]}
+          className="nav-signin"
+          data-pending={session === "unknown" ? "" : undefined}
+          aria-current={isCurrent(pathname, account[0]) ? "page" : undefined}
+        >
+          {account[1]}
+        </Link>
+      </li>
     </ul>
   );
 

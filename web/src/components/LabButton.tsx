@@ -1,11 +1,9 @@
-import { env } from "@/lib/env";
 import { isStaffRole } from "@/lib/session-service";
 
-// The supplied CK Virtual Lab image as a submit control. Rendered only for STAFF, EDITOR and ADMIN,
-// and only when the lab hand-off is configured; /lab/launch checks the role again.
+// The supplied CK Virtual Lab image as a submit control. Rendered for STAFF, EDITOR and ADMIN.
+// /lab/launch checks the role again, and refuses the hand-off when the lab address is unset.
 export function LabButton({ role }: { role: string }) {
-  const { LAB_URL, LAB_ASSERTION_SECRET } = env();
-  if (!isStaffRole(role) || !LAB_URL || !LAB_ASSERTION_SECRET) return null;
+  if (!isStaffRole(role)) return null;
   return (
     <form method="post" action="/lab/launch" className="lab-launch">
       <button type="submit" className="lab-launch__button">

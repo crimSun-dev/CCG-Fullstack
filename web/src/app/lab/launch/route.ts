@@ -14,9 +14,7 @@ export async function POST(req: NextRequest) {
   if (!isStaffRole(user.role)) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const { LAB_URL, LAB_ASSERTION_SECRET } = env();
-  if (!LAB_URL || !LAB_ASSERTION_SECRET) {
-    return Response.json({ error: { code: "lab_unconfigured", message: "CK Virtual Lab is not configured" } }, { status: 503 });
-  }
+  if (!LAB_URL || !LAB_ASSERTION_SECRET) return seeOther(req, "/admin?error=lab");
   const token = issueLabAssertion(user, LAB_ASSERTION_SECRET)!;
   return new Response(null, {
     status: 303,

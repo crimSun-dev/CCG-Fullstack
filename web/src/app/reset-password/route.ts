@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { env } from "@/lib/env";
 import { isSameOrigin, seeOther } from "@/lib/http";
 import { authPage, escapeHtml, submitButton } from "@/lib/login-page";
 import { accountService } from "@/lib/services";
@@ -26,7 +27,12 @@ ${submitButton("Set password")}
 
 export function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
-  return resetPage(200, { email: params.get("email") ?? "", notice: params.get("sent") ? SENT : undefined });
+  const notice = params.get("sent")
+    ? env().RESEND_API_KEY
+      ? SENT
+      : "This server has no email sender configured, so no code was emailed."
+    : undefined;
+  return resetPage(200, { email: params.get("email") ?? "", notice });
 }
 
 export async function POST(req: NextRequest) {

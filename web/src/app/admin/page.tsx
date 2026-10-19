@@ -63,7 +63,10 @@ export default async function AdminPage({ searchParams }: Props) {
           </form>
         </div>
         {params.saved && <p role="status">Saved {params.saved}.</p>}
-        {params.error && <p role="alert">Not saved: {params.error}.</p>}
+        {params.error === "lab" && (
+          <p role="alert">CK Virtual Lab has no public address on this server yet, so the button cannot open it.</p>
+        )}
+        {params.error && params.error !== "lab" && <p role="alert">Not saved: {params.error}.</p>}
 
         <section className="admin-section">
           <h2>Leads ({leadCount})</h2>

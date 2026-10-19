@@ -3,7 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LabButton } from "@/components/LabButton";
 import { currentAdmin } from "@/lib/admin-auth";
+import { env } from "@/lib/env";
 import { NAME_MAX, PASSWORD_MIN, isStaffRole } from "@/lib/session-service";
+import { canManageRoles } from "@/lib/staff-roles";
 
 export const metadata: Metadata = { title: "Your account", robots: { index: false, follow: false } };
 
@@ -31,7 +33,12 @@ export default async function AccountPage({ searchParams }: Props) {
   const user = await currentAdmin();
   if (!user) redirect("/login");
   const params = await searchParams;
-  const saved = params.saved ? SAVED[params.saved] : undefined;
+  const saved =
+    params.saved === "email-sent" && !env().RESEND_API_KEY
+      ? "This server has no email sender configured, so the code was not emailed."
+      : params.saved
+        ? SAVED[params.saved]
+        : undefined;
   const error = params.error ? (ERRORS[params.error] ?? "Not saved.") : undefined;
 
   // The root layout already provides <main>; this page is an Operate surface on the paper field.
@@ -47,8 +54,9 @@ export default async function AccountPage({ searchParams }: Props) {
           </div>
           <LabButton role={user.role} />
           {isStaffRole(user.role) && (
-            <p>
+            <p className="admin-links">
               <Link href="/admin">Staff page</Link>
+              {canManageRoles(user.role) && <Link href="/admin/users">Accounts</Link>}
             </p>
           )}
           <form method="post" action="/admin/logout">
