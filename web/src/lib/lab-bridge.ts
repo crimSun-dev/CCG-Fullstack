@@ -2,14 +2,15 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import type { Duplex } from "node:stream";
-import { Readable } from "node:stream";
+import { Duplex, Readable } from "node:stream";
 import type { NextRequest } from "next/server";
 import { env } from "./env";
 import { publicUrl, requestMeta } from "./http";
 
 // CK Virtual Lab served by this site at /lab. The lab's own Express server (../lab/server) runs inside
-// this process on a loopback port; /lab/* is relayed to it (src/app/lab/[[...path]]/route.ts) and its
+// this process without a port: Hostinger's Node loader allows one listen() per app ("http.Server.listen()
+// was called more than once, ignore"), so each request reaches the lab over an in-memory socket pair
+// handed to its server as a connection (connectLab). /lab/* is relayed to it (src/app/lab/[[...path]]/route.ts) and its
 // /v1/live socket is handed over before Next sees the upgrade (installLabUpgrade). The lab keeps its
 // own database (LAB_DATABASE_URL); this site never queries it. Staff still enter through the signed
 // hand-off from /lab/launch, so the lab's sessions and checks are exactly those of a standalone lab.
@@ -23,7 +24,59 @@ type LabModules = {
   attachLive: (server: EventEmitter, opts: Record<string, unknown>) => unknown;
 };
 
-type Lab = { port: number; upgrade: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => void };
+type Lab = {
+  // A fresh in-memory connection into the lab's HTTP server, client side.
+  connect: () => Duplex;
+  upgrade: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => void;
+};
+
+// How long a visitor waits for the lab to come up before getting a 503 instead of a spinner.
+export const LAB_START_TIMEOUT_MS = 15_000;
+
+// Two connected in-memory streams: what one writes, the other reads. Each side also answers the
+// socket calls Node's HTTP server and client make (timeouts, no-delay, keep-alive, addresses).
+export function socketPair(): [Duplex, Duplex] {
+  const sides: Duplex[] = [];
+  const make = (peer: () => Duplex) => {
+    const side = new Duplex({
+      read() {},
+      write(chunk, _encoding, done) {
+        peer().push(chunk);
+        done();
+      },
+      final(done) {
+        peer().push(null);
+        done();
+      },
+      destroy(err, done) {
+        const other = peer();
+        if (!other.destroyed) other.push(null);
+        done(err);
+      },
+    });
+    return Object.assign(side, {
+      remoteAddress: "127.0.0.1",
+      remotePort: 0,
+      encrypted: false,
+      setTimeout() { return side; },
+      setNoDelay() { return side; },
+      setKeepAlive() { return side; },
+      ref() { return side; },
+      unref() { return side; },
+      address() { return { address: "127.0.0.1", family: "IPv4", port: 0 }; },
+    });
+  };
+  sides.push(make(() => sides[1]), make(() => sides[0]));
+  return [sides[0], sides[1]];
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took longer than ${ms}ms`)), ms);
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
 
 const g = globalThis as unknown as { __ccgLab?: Promise<Lab>; __ccgLabUpgrade?: boolean };
 
@@ -60,7 +113,7 @@ export function startLab(): Promise<Lab> {
       if (!root) throw new Error("CK Virtual Lab's files are not on this server");
       const { createApp, createPool, resolveCompanyId, attachLive } = labModules(root);
       const pool = createPool(e.LAB_DATABASE_URL);
-      const companyId = await resolveCompanyId(pool, e.LAB_COMPANY_SLUG);
+      const companyId = await withTimeout(resolveCompanyId(pool, e.LAB_COMPANY_SLUG), LAB_START_TIMEOUT_MS, "Reaching the lab database");
       // trustProxy 1: this site is the one proxy in front, and says the visitor's IP and https.
       const app = createApp({
         pool,
@@ -73,15 +126,16 @@ export function startLab(): Promise<Lab> {
       // The lab's socket handler listens on this emitter; installLabUpgrade feeds it.
       const upgrades = new EventEmitter();
       attachLive(upgrades, { hub: app.locals.hub, pool, companyId, trustProxy: 1, authenticate: app.locals.authenticate });
-      const port = await new Promise<number>((resolve, reject) => {
-        server.on("error", reject);
-        server.listen(0, "127.0.0.1", () => {
-          const addr = server.address();
-          if (addr && typeof addr === "object") resolve(addr.port);
-          else reject(new Error("CK Virtual Lab did not bind"));
-        });
-      });
-      return { port, upgrade: (req, socket, head) => upgrades.emit("upgrade", req, socket, head) };
+      // Never listen(): connections are handed to the server directly (any Duplex will do).
+      server.on("clientError", (_err, socket) => socket.destroy());
+      return {
+        connect: () => {
+          const [client, serverSide] = socketPair();
+          server.emit("connection", serverSide);
+          return client;
+        },
+        upgrade: (req, socket, head) => upgrades.emit("upgrade", req, socket, head),
+      };
     })();
     g.__ccgLab = started;
     // A failed start is retried on the next visit rather than remembered forever.
@@ -112,7 +166,7 @@ export function scopeCookie(cookie: string): string {
 export async function proxyLab(req: NextRequest, rest: string): Promise<Response> {
   let lab: Lab;
   try {
-    lab = await startLab();
+    lab = await withTimeout(startLab(), LAB_START_TIMEOUT_MS, "Starting CK Virtual Lab");
   } catch {
     return Response.json({ error: { code: "lab_unavailable", message: "CK Virtual Lab is not available" } }, { status: 503 });
   }
@@ -129,10 +183,12 @@ export async function proxyLab(req: NextRequest, rest: string): Promise<Response
   if (ip !== "unknown") headers["x-forwarded-for"] = ip;
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.from(await req.arrayBuffer());
   if (body) headers["content-length"] = String(body.length);
+  // One in-memory connection per request.
+  headers.connection = "close";
 
   return new Promise<Response>((resolve) => {
     const upstream = http.request(
-      { host: "127.0.0.1", port: lab.port, method: req.method, path: `/${rest}${req.nextUrl.search}`, headers },
+      { createConnection: () => lab.connect(), method: req.method, path: `/${rest}${req.nextUrl.search}`, headers },
       (res) => {
         const out = new Headers();
         for (const [name, value] of Object.entries(res.headers)) {
