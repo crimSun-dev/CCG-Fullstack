@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentAdmin } from "@/lib/admin-auth";
-import { homeForRole } from "@/lib/session-service";
+import { LabButton } from "@/components/LabButton";
+import { canEditContent } from "@/lib/admin-mutation";
+import { staffPermissions } from "@/lib/office-bridge";
+import { canReadLeads } from "@/lib/session-service";
 import { db } from "@/lib/db";
 import { liveContent } from "@/lib/services";
+import { canManageRoles } from "@/lib/staff-roles";
 
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
@@ -15,7 +19,10 @@ type Props = { searchParams: Promise<{ page?: string; saved?: string; error?: st
 export default async function AdminPage({ searchParams }: Props) {
   const admin = await currentAdmin();
   if (!admin) redirect("/login");
-  if (homeForRole(admin.role) === "/account") redirect("/account");
+  // STAFF, EDITOR and ADMIN read enquiries. Only EDITOR and ADMIN see the content forms, the same
+  // rule guardContentEdit applies to the posts.
+  if (!canReadLeads(admin.role)) redirect("/account");
+  const editor = canEditContent(admin.role);
 
   const params = await searchParams;
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
@@ -28,8 +35,8 @@ export default async function AdminPage({ searchParams }: Props) {
       take: LEADS_PER_PAGE,
     }),
     db().lead.count(),
-    repo.listPublicPrograms(),
-    repo.listPeople(),
+    editor ? repo.listPublicPrograms() : [],
+    editor ? repo.listPeople() : [],
   ]);
   const lastPage = Math.max(1, Math.ceil(leadCount / LEADS_PER_PAGE));
 
@@ -43,8 +50,11 @@ export default async function AdminPage({ searchParams }: Props) {
               Signed in as {admin.name} ({admin.role})
             </p>
           </div>
-          <p>
-            <Link href="/office/">Virtual office</Link>
+          <LabButton role={admin.role} />
+          <p className="admin-links">
+            <Link href="/account">Your account</Link>
+            {canManageRoles(admin.role) && <Link href="/admin/users">Accounts</Link>}
+            {staffPermissions(admin.role) && <Link href="/office/">Virtual office</Link>}
           </p>
           <form method="post" action="/admin/logout">
             <button type="submit" className="op-quiet">
@@ -107,54 +117,65 @@ export default async function AdminPage({ searchParams }: Props) {
           </p>
         </section>
 
-        <section className="admin-section">
-          <h2>Programs</h2>
-          <p>Summaries only. Program codes are fixed by the code and the database; there is no create.</p>
-          <div className="admin-forms">
-            {programs.map((p) => (
-              <form key={p.code} className="admin-form" method="post" action={`/admin/programs/${p.code}`}>
-                <h3>{p.title}</h3>
-                <p>
-                  <label>
-                    Summary
-                    <br />
-                    <textarea name="summary" defaultValue={p.summary} rows={3} cols={80} required maxLength={1000} />
-                  </label>
-                </p>
-                <p>
-                  <button type="submit">Save {p.title}</button>
-                </p>
-              </form>
-            ))}
-          </div>
-        </section>
+        {editor && (
+          <>
+            <section className="admin-section">
+              <h2>Programs</h2>
+              <p>Summaries only. Program codes are fixed by the code and the database; there is no create.</p>
+              <div className="admin-forms">
+                {programs.map((p) => (
+                  <form key={p.code} className="admin-form" method="post" action={`/admin/programs/${p.code}`}>
+                    <h3>{p.title}</h3>
+                    <p>
+                      <label>
+                        Summary
+                        <br />
+                        <textarea
+                          name="summary"
+                          defaultValue={p.summary}
+                          rows={3}
+                          cols={80}
+                          required
+                          maxLength={1000}
+                        />
+                      </label>
+                    </p>
+                    <p>
+                      <button type="submit">Save {p.title}</button>
+                    </p>
+                  </form>
+                ))}
+              </div>
+            </section>
 
-        <section className="admin-section">
-          <h2>People</h2>
-          <div className="admin-forms">
-            {people.map((person) => (
-              <form key={person.id} className="admin-form" method="post" action={`/admin/people/${person.id}`}>
-                <h3>{person.name}</h3>
-                <p>
-                  <label>
-                    Role (leave empty to hide the title line){" "}
-                    <input name="role" defaultValue={person.role ?? ""} maxLength={120} />
-                  </label>
-                </p>
-                <p>
-                  <label>
-                    Bio
-                    <br />
-                    <textarea name="bio" defaultValue={person.bio} rows={4} cols={80} maxLength={4000} />
-                  </label>
-                </p>
-                <p>
-                  <button type="submit">Save {person.name}</button>
-                </p>
-              </form>
-            ))}
-          </div>
-        </section>
+            <section className="admin-section">
+              <h2>People</h2>
+              <div className="admin-forms">
+                {people.map((person) => (
+                  <form key={person.id} className="admin-form" method="post" action={`/admin/people/${person.id}`}>
+                    <h3>{person.name}</h3>
+                    <p>
+                      <label>
+                        Role (leave empty to hide the title line){" "}
+                        <input name="role" defaultValue={person.role ?? ""} maxLength={120} />
+                      </label>
+                    </p>
+                    <p>
+                      <label>
+                        Bio
+                        <br />
+                        <textarea name="bio" defaultValue={person.bio} rows={4} cols={80} maxLength={4000} />
+                      </label>
+                    </p>
+                    <p>
+                      <button type="submit">Save {person.name}</button>
+                    </p>
+                  </form>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

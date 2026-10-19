@@ -11,8 +11,9 @@ web
 ## Users
 
 - **Public visitor:** a CEO, C-suite leader, or business owner (Jakarta and Seoul) deciding whether to speak to CK Song about coaching. They read, then enquire through `/contact`.
-- **Member:** a general visitor who signs in at `/login` and lands on `/account`.
-- **Staff editor:** ADMIN or EDITOR, granted only by `pnpm admin:create`. Lands on `/admin`, reads leads, edits program summaries and people.
+- **Member:** a general visitor who registers at `/register` (or uses Google), signs in at `/login`, and lands on `/account`.
+- **Staff:** STAFF, granted or cleared by any ADMIN at `/admin/users`. Lands on `/admin`, reads every enquiry, and opens CK Virtual Lab.
+- **Staff editor:** ADMIN or EDITOR, granted only by `pnpm admin:create`. Lands on `/admin`, reads leads, edits program summaries and people, and opens CK Virtual Lab. Only ADMIN manages STAFF.
 
 ## Product Purpose
 
@@ -34,7 +35,10 @@ The public site for CK Coaching Group (CCG), a CEO coaching practice founded by 
 - Exactly three public programs: Leadership Advisory, Group Coaching, Premium Coaching. Every other program path is a 404 (`/programs/internship` included).
 - `/contact` and `/login` are real `<form>` posts that work with JavaScript off.
 - No prices, checkout, internship, camp, university, or bank details anywhere.
-- No registration, username, or password-change screen. Google sign-in only when a client is configured.
+- Public registration (email, password, full name; always MEMBER). Every signed-in account changes its full name, password, and email at `/account`.
+- A forgotten password is reset at `/forgot-password` with a 6-digit emailed code; an email change is confirmed with a code sent to the new address, and the old address is told. Codes are single use, expire in 15 minutes, and die after 5 wrong tries. A reset request never says whether an email has an account.
+- Account email carries the CCG mark and blues (#030507, #1088f8, #3e9ff8, #70b8f8) and links to `PUBLIC_SITE_URL`, never the bind address.
+- CK Virtual Lab is a separate app with its own database. The lab button posts to `/lab/launch`, which hands the lab a 60-second HMAC-signed assertion (account id, email, full name, role; no password) in the URL fragment. Google sign-in only when a client is configured.
 - `G:` is exFAT; build and run on the NTFS copy `C:\Users\Draven Chen\src\ccg-public-web`.
 
 ## Brand Commitments

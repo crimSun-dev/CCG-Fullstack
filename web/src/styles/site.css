@@ -82,6 +82,7 @@ a:hover { text-decoration-color: currentColor; }
 :root { --ccg-head: 4.75rem; }
 .site-head {
   position: sticky; top: 0; z-index: var(--sc-z-chrome);
+  overflow-x: clip; /* the comet runs to 100vw; without this it widens the page on phones */
   height: var(--ccg-head);
   background: color-mix(in oklab, var(--ccg-black) 94%, transparent);
   border-bottom: 1px solid var(--sc-hairline);
@@ -143,8 +144,10 @@ a:hover { text-decoration-color: currentColor; }
 .site-menu__glyph::after { top: calc(100% - 1.5px); width: 62%; background: var(--ccg-blue); }
 .site-menu[open] .site-menu__glyph::before { top: calc(50% - 0.75px); transform: rotate(45deg); }
 .site-menu[open] .site-menu__glyph::after { top: calc(50% - 0.75px); width: 100%; transform: rotate(-45deg); }
+/* The bar's backdrop-filter makes it the containing block for fixed children, so a fixed
+   inset would shrink to the bar's own height. Hang the panel under the bar and size it to the screen. */
 .site-menu__panel {
-  position: fixed; inset: var(--ccg-head) 0 0 0; overflow-y: auto;
+  position: absolute; top: 100%; left: 0; right: 0; height: calc(100dvh - var(--ccg-head)); overflow-y: auto; overscroll-behavior: contain;
   background: var(--ccg-black); padding: var(--sc-5) var(--sc-gutter) var(--sc-8);
 }
 .site-menu__panel ul { list-style: none; margin: 0; padding: 0; }
@@ -159,6 +162,7 @@ a:hover { text-decoration-color: currentColor; }
 @media (max-width: 1120px) {
   .site-nav { display: none; }
   .site-menu { display: block; }
+  html:has(.site-menu[open]) { overflow: hidden; } /* the page stays put behind the open menu */
 }
 
 /* ---------------------------------------------------------- the footer -- */
@@ -1019,3 +1023,12 @@ html:not([data-motion="on"]) .hero__stage::before { display: none; }
   background: var(--g-blues); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .figure__unit { color: inherit; }
+.admin-form__step { display: grid; gap: var(--sc-4); }
+.admin-form__step + .admin-form__step { padding-top: var(--sc-4); border-top: 1px solid var(--sc-hairline); }
+.admin-form__step > p { margin: 0; }
+/* The lab mark is transparent with white lettering, so it sits on the brand black. */
+.operate .lab-launch__button { padding: 0.35rem 0.7rem; background: #030507; border: 1px solid #030507; border-radius: 2px; line-height: 0; }
+.operate .lab-launch__button:hover { background: #030507; border-color: #1088f8; }
+.operate .lab-launch__button img { display: block; height: 3rem; width: auto; transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.operate .lab-launch__button:hover img { transform: translateY(-1px); }
+.admin-links { display: flex; flex-wrap: wrap; gap: var(--sc-4); }

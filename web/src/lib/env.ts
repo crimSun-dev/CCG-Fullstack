@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// A blank line in .env (KEY="") means unset, not an invalid value.
+const blankIsUnset = <T extends z.ZodType>(inner: T) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), inner.optional());
+
 // Validated once, at startup (RULE-034). A missing value stops the process before it listens.
 const schema = z
   .object({
@@ -10,6 +14,12 @@ const schema = z
     RESEND_API_KEY: z.string().optional(),
     LEAD_FROM_EMAIL: z.string().default("CCG Website <onboarding@resend.dev>"),
     HUB_DATABASE_HOST: z.string().optional(),
+    // Canonical origin for links in account email, e.g. https://ajarin.org. Without it the origin
+    // comes from the forwarded Host header, which a client can set.
+    PUBLIC_SITE_URL: blankIsUnset(z.url("PUBLIC_SITE_URL must be an absolute URL")),
+    // Shared with CK Virtual Lab to sign the staff hand-off. Without it the lab button is hidden.
+    LAB_ASSERTION_SECRET: blankIsUnset(z.string().min(32, "LAB_ASSERTION_SECRET must be at least 32 characters")),
+    LAB_URL: blankIsUnset(z.url("LAB_URL must be an absolute URL")),
     // Optional. Without both, /admin/login offers email and password only (see googleConfig).
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),

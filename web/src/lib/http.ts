@@ -40,3 +40,10 @@ export function publicUrl(req: NextRequest, path: string): URL {
 export function seeOther(req: NextRequest, path: string): Response {
   return new Response(null, { status: 303, headers: { Location: publicUrl(req, path).toString() } });
 }
+
+// The origin written into account email. PUBLIC_SITE_URL wins; the forwarded host is the fallback
+// so local dev and previews still produce working links.
+export function siteOrigin(req: NextRequest, configured: string | undefined): string {
+  if (configured) return new URL(configured).origin;
+  return publicUrl(req, "/").origin;
+}

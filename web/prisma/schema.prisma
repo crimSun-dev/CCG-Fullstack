@@ -95,6 +95,7 @@ model AdminUser {
   // Google OpenID Connect `sub`, stored on the first verified-email match. Null until then.
   googleSub    String?        @unique @map("google_sub")
   sessions     AdminSession[]
+  codes        VerificationCode[]
 
   @@map("admin_user")
 }
@@ -109,4 +110,23 @@ model AdminSession {
 
   @@index([userId])
   @@map("admin_session")
+}
+
+// One-time emailed code for a password reset or an email change. Only the code's hash is stored.
+// A new code for the same purpose voids the old one; a code dies after use, expiry, or 5 wrong tries.
+model VerificationCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  user       AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    String
+  codeHash   String    @map("code_hash")
+  // The address being verified, for EMAIL_CHANGE. Null for PASSWORD_RESET.
+  newEmail   String?   @map("new_email")
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, purpose])
+  @@map("verification_code")
 }

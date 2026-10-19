@@ -12,6 +12,12 @@ function stubMailer(result: MailResult | (() => Promise<MailResult>)): Mailer & 
       mailer.calls += 1;
       return typeof result === "function" ? result() : result;
     },
+    async sendCode(): Promise<MailResult> {
+      return { status: "SENT" };
+    },
+    async sendEmailChanged(): Promise<MailResult> {
+      return { status: "SENT" };
+    },
   };
   return mailer;
 }

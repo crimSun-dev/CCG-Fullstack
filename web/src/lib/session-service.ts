@@ -3,18 +3,60 @@ import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { GoogleIdentity } from "./google-oidc";
 
-// MEMBER is a general visitor. ADMIN and EDITOR are granted only by `pnpm admin:create`.
-export type AdminRole = "ADMIN" | "EDITOR" | "MEMBER";
+// MEMBER is a general visitor who registered or used Google. STAFF is granted by an ADMIN from
+// /admin/users. ADMIN and EDITOR are granted only by `pnpm admin:create`.
+export type AdminRole = "ADMIN" | "EDITOR" | "STAFF" | "MEMBER";
+
+// Every role that reads enquiries and enters CK Virtual Lab. MEMBER never does.
+export const STAFF_ROLES: readonly AdminRole[] = ["ADMIN", "EDITOR", "STAFF"];
+
+export function isStaffRole(role: string): boolean {
+  return (STAFF_ROLES as readonly string[]).includes(role);
+}
+
+// Every stored enquiry is readable by a staff role. A MEMBER cannot open or query the list.
+export const canReadLeads = isStaffRole;
 
 export function homeForRole(role: string): "/admin" | "/account" {
-  return role === "ADMIN" || role === "EDITOR" ? "/admin" : "/account";
+  return isStaffRole(role) ? "/admin" : "/account";
 }
+
+export const NAME_MAX = 120;
+export const PASSWORD_MIN = 12;
+// bcrypt reads only the first 72 bytes. A longer password would be silently truncated.
+export const PASSWORD_MAX_BYTES = 72;
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+// Loose on purpose: the emailed code is the real proof of an address.
+export function isEmail(email: string): boolean {
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+export function cleanName(name: string): string | null {
+  const n = name.trim().replace(/\s+/g, " ");
+  return n && n.length <= NAME_MAX ? n : null;
+}
+
+export function passwordProblem(password: string): string | null {
+  if (password.length < PASSWORD_MIN) return `Use at least ${PASSWORD_MIN} characters.`;
+  if (Buffer.byteLength(password, "utf8") > PASSWORD_MAX_BYTES) return `Use at most ${PASSWORD_MAX_BYTES} bytes.`;
+  return null;
+}
+
+export type RegisterResult =
+  | { ok: true; user: AdminUser; token: string }
+  | { ok: false; error: "invalid_email" | "invalid_name" | "weak_password" | "email_taken"; message: string };
 
 export type AdminUser = { id: string; email: string; name: string; role: AdminRole };
 
 export interface SessionService {
   login(email: string, password: string): Promise<{ user: AdminUser; token: string } | null>;
   loginWithGoogle(identity: GoogleIdentity): Promise<{ user: AdminUser; token: string } | null>;
+  // Public sign-up. Always MEMBER. An existing email is left exactly as it was.
+  register(input: { email: string; password: string; name: string }): Promise<RegisterResult>;
   read(token: string): Promise<AdminUser | null>;
   revoke(token: string): Promise<void>;
 }
@@ -54,7 +96,7 @@ export function createSessionService(prisma: PrismaClient): SessionService {
 
   return {
     async login(email, password) {
-      const user = await prisma.adminUser.findUnique({ where: { email: email.trim().toLowerCase() } });
+      const user = await prisma.adminUser.findUnique({ where: { email: normalizeEmail(email) } });
       const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
       if (!user || !ok) return null;
       return startSession(user);
@@ -69,7 +111,7 @@ export function createSessionService(prisma: PrismaClient): SessionService {
       const linked = await prisma.adminUser.findUnique({ where: { googleSub: sub } });
       if (linked) return startSession(linked);
 
-      const normalized = email.trim().toLowerCase();
+      const normalized = normalizeEmail(email);
       // googleSub: null in the filter, so a row already bound to another subject is never rebound.
       const { count } = await prisma.adminUser.updateMany({
         where: { email: normalized, googleSub: null },
@@ -90,6 +132,32 @@ export function createSessionService(prisma: PrismaClient): SessionService {
         },
       });
       return startSession(created);
+    },
+
+    async register({ email, password, name }) {
+      const normalized = normalizeEmail(email);
+      if (!isEmail(normalized)) return { ok: false, error: "invalid_email", message: "Enter a valid email address." };
+      const fullName = cleanName(name);
+      if (!fullName) return { ok: false, error: "invalid_name", message: `Enter your full name (up to ${NAME_MAX} characters).` };
+      const weak = passwordProblem(password);
+      if (weak) return { ok: false, error: "weak_password", message: weak };
+
+      const taken: RegisterResult = {
+        ok: false,
+        error: "email_taken",
+        message: "An account with this email already exists. Sign in, or reset the password.",
+      };
+      if (await prisma.adminUser.findUnique({ where: { email: normalized } })) return taken;
+      try {
+        const created = await prisma.adminUser.create({
+          data: { email: normalized, name: fullName, role: "MEMBER", passwordHash: await hashPassword(password) },
+        });
+        return { ok: true, ...(await startSession(created)) };
+      } catch (err) {
+        // Two sign-ups for one email at once: the unique index decides, the loser changes nothing.
+        if ((err as { code?: string }).code === "P2002") return taken;
+        throw err;
+      }
     },
 
     async read(token) {

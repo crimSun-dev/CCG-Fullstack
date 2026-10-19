@@ -5,13 +5,13 @@ import { LOGIN_FAILED, loginPage } from "@/lib/login-page";
 import { googleOidc, sessionService } from "@/lib/services";
 import { homeForRole } from "@/lib/session-service";
 
-// Visitor sign-in. A general user lands on /account. ADMIN and EDITOR, granted only by
-// `pnpm admin:create`, land on the staff page.
+// Visitor sign-in. A MEMBER lands on /account. STAFF, EDITOR and ADMIN land on /admin.
 
 export async function GET(req: NextRequest) {
   const user = await adminFromRequest(req);
   if (user) return seeOther(req, homeForRole(user.role));
-  return loginPage(200, { googleAvailable: googleOidc() !== null });
+  const notice = req.nextUrl.searchParams.get("reset") ? "Your password is set. Sign in with it now." : undefined;
+  return loginPage(200, { googleAvailable: googleOidc() !== null, notice });
 }
 
 export async function POST(req: NextRequest) {

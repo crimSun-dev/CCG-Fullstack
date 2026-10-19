@@ -12,32 +12,36 @@ const GOOGLE_MARK = `<svg class="auth-google__mark" viewBox="0 0 48 48" width="1
 <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
 </svg>`;
 
-export function loginPage(status: number, opts: { googleAvailable: boolean; error?: string }): Response {
-  // No client configured: no link to Google at all, only the explanation.
-  const google = opts.googleAvailable
-    ? `<p><a class="auth-google" href="/login/google">${GOOGLE_MARK}<span>Continue with Google</span></a></p>`
-    : `<p><button class="auth-google" type="button" disabled aria-describedby="google-unavailable">${GOOGLE_MARK}<span>Continue with Google</span></button></p>
-<p id="google-unavailable">Google sign-in is unavailable: this server has no Google client configured. Use your email and password.</p>`;
+// Values echoed back into a form (an email the visitor typed) pass through here.
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+const ARROW = `<svg viewBox="0 0 18 12" aria-hidden="true" focusable="false"><path d="M0 6H16.5M11.5 1L16.5 6L11.5 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></svg>`;
+
+export function submitButton(label: string): string {
+  return `<p><button type="submit"><span>${label}</span>${ARROW}</button></p>`;
+}
+
+// One shell for every signed-out screen: /login, /register, /forgot-password, /reset-password.
+// `error` and `notice` are fixed strings from the server, never visitor input.
+export function authPage(
+  status: number,
+  opts: { title: string; heading: string; body: string; error?: string; notice?: string },
+): Response {
   const html = `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><meta name="theme-color" content="#030507"><title>Sign in | CK Coaching Group</title>
+<meta name="robots" content="noindex"><meta name="theme-color" content="#030507"><title>${opts.title} | CK Coaching Group</title>
 <link rel="icon" href="/brand/ccg-mark.svg"><link rel="preload" href="/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/auth.css"></head>
 <body>
 <header class="auth-head"><a href="/" class="auth-home"><img src="/brand/ccg-mark.svg" alt="CK Coaching Group" width="37" height="43"><span aria-hidden="true"><span>CK</span><span>Coaching</span><span>Group</span></span></a></header>
 <main class="auth">
 <div class="auth__panel">
-<h1>Sign in</h1>
-${opts.error ? `<p role="alert">${opts.error}</p>` : ""}
-<form method="post" action="/login">
-<p><label>Email <input name="email" type="email" required autocomplete="username"></label></p>
-<p><label>Password <input name="password" type="password" required autocomplete="current-password"></label></p>
-<p><button type="submit"><span>Sign in</span><svg viewBox="0 0 18 12" aria-hidden="true" focusable="false"><path d="M0 6H16.5M11.5 1L16.5 6L11.5 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></svg></button></p>
-</form>
-<section aria-label="Google sign-in">
-${google}
-</section>
+<h1>${opts.heading}</h1>
+${opts.error ? `<p role="alert">${opts.error}</p>` : ""}${opts.notice ? `<p role="status">${opts.notice}</p>` : ""}
+${opts.body}
 </div>
 </main>
 </body>
@@ -45,5 +49,28 @@ ${google}
   return new Response(html, {
     status,
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
+export function loginPage(status: number, opts: { googleAvailable: boolean; error?: string; notice?: string }): Response {
+  // No client configured: no link to Google at all, only the explanation.
+  const google = opts.googleAvailable
+    ? `<p><a class="auth-google" href="/login/google">${GOOGLE_MARK}<span>Continue with Google</span></a></p>`
+    : `<p><button class="auth-google" type="button" disabled aria-describedby="google-unavailable">${GOOGLE_MARK}<span>Continue with Google</span></button></p>
+<p id="google-unavailable">Google sign-in is unavailable: this server has no Google client configured. Use your email and password.</p>`;
+  return authPage(status, {
+    title: "Sign in",
+    heading: "Sign in",
+    error: opts.error,
+    notice: opts.notice,
+    body: `<form method="post" action="/login">
+<p><label>Email <input name="email" type="email" required autocomplete="username"></label></p>
+<p><label>Password <input name="password" type="password" required autocomplete="current-password"></label></p>
+${submitButton("Sign in")}
+</form>
+<p class="auth-links"><a href="/forgot-password">Forgot your password?</a> · <a href="/register">Create an account</a></p>
+<section aria-label="Google sign-in">
+${google}
+</section>`,
   });
 }
