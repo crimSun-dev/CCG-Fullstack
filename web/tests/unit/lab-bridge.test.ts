@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { labTarget, parseEnv } from "@/lib/env";
 import { labRoot, scopeCookie, withLabBase } from "@/lib/lab-bridge";
 
@@ -67,5 +67,46 @@ describe("lab bridge", () => {
 
   it("finds this repo's lab from web/", () => {
     expect(labRoot(process.cwd())).toBe(path.resolve(process.cwd(), "..", "lab"));
+  });
+});
+
+describe("in-memory connection into the lab (no listen)", () => {
+  it("carries a full HTTP request and response through a server that never listens", async () => {
+    const http = await import("node:http");
+    const { socketPair } = await import("@/lib/lab-bridge");
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        res.setHeader("Set-Cookie", "lab_session=x; Path=/; HttpOnly");
+        res.end(JSON.stringify({ method: req.method, url: req.url, host: req.headers.host, body }));
+      });
+    });
+    const listen = vi.spyOn(server, "listen");
+    const reply = await new Promise<{ status?: number; cookie?: string[]; json: string }>((resolve, reject) => {
+      const r = http.request(
+        {
+          createConnection: () => {
+            const [client, serverSide] = socketPair();
+            server.emit("connection", serverSide);
+            return client;
+          },
+          method: "POST",
+          path: "/v1/ccg/enter?x=1",
+          headers: { host: "ajarin.org", "content-type": "application/json", connection: "close" },
+        },
+        (res) => {
+          let json = "";
+          res.on("data", (c) => (json += c));
+          res.on("end", () => resolve({ status: res.statusCode, cookie: res.headers["set-cookie"], json }));
+        },
+      );
+      r.on("error", reject);
+      r.end('{"token":"t"}');
+    });
+    expect(reply.status).toBe(200);
+    expect(JSON.parse(reply.json)).toEqual({ method: "POST", url: "/v1/ccg/enter?x=1", host: "ajarin.org", body: '{"token":"t"}' });
+    expect(reply.cookie).toEqual(["lab_session=x; Path=/; HttpOnly"]);
+    expect(listen).not.toHaveBeenCalled();
   });
 });
