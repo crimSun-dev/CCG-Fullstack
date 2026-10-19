@@ -34,9 +34,11 @@ form button[type="submit"]:hover::before { clip-path: inset(0 0 0 0); }
 form button[type="submit"]:hover svg { translate: 0.3rem 0; }
 form button[type="submit"]:active { transform: translateY(1px); }
 section { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--line); display: grid; gap: 0.75rem; }
-.auth-google { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 3rem; padding: 0 1rem;
+.auth-google { display: flex; align-items: center; justify-content: center; gap: 0.75rem; width: 100%; min-height: 3rem; padding: 0 1rem;
   background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 2px; text-decoration: none; font-weight: 560; }
 a.auth-google:hover { border-color: var(--soft); }
 .auth-google:disabled { cursor: not-allowed; color: #6b7686; background: #e9ecef; }
+.auth-google__mark { flex: none; }
+.auth-google:disabled .auth-google__mark { filter: grayscale(1); opacity: 0.6; }
 #google-unavailable { font-size: 0.875rem; color: var(--soft); }
 [role="alert"] { margin-bottom: 1.25rem; padding: 0.75rem 1rem; background: #fdeaea; border: 1px solid #f2bcbc; color: #6b0f0f; font-size: 0.9rem; }

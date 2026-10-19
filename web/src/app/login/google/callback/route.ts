@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { clearedOidcCookie, OIDC_COOKIE, sessionCookie } from "@/lib/admin-auth";
 import { GOOGLE_CALLBACK_PATH } from "@/lib/google-oidc";
-import { seeOther } from "@/lib/http";
+import { publicUrl, seeOther } from "@/lib/http";
 import { LOGIN_FAILED, loginPage } from "@/lib/login-page";
 import { googleOidc, sessionService } from "@/lib/services";
 import { homeForRole } from "@/lib/session-service";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const identity = await google.exchangeCode({
     code,
-    redirectUri: new URL(GOOGLE_CALLBACK_PATH, req.url).toString(),
+    redirectUri: publicUrl(req, GOOGLE_CALLBACK_PATH).toString(),
     nonce,
   });
   const result = identity ? await sessionService().loginWithGoogle(identity) : null;

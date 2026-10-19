@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { oidcCookie } from "@/lib/admin-auth";
 import { GOOGLE_CALLBACK_PATH } from "@/lib/google-oidc";
-import { seeOther } from "@/lib/http";
+import { publicUrl, seeOther } from "@/lib/http";
 import { googleOidc } from "@/lib/services";
 
 // Starts the OpenID Connect round trip. `state` is the CSRF check on the callback, `nonce` ties
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const state = randomBytes(32).toString("base64url");
   const nonce = randomBytes(32).toString("base64url");
   const location = google.authorizationUrl({
-    redirectUri: new URL(GOOGLE_CALLBACK_PATH, req.url).toString(),
+    redirectUri: publicUrl(req, GOOGLE_CALLBACK_PATH).toString(),
     state,
     nonce,
   });

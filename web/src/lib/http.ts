@@ -27,7 +27,16 @@ export function isSameOrigin(req: NextRequest): boolean {
   }
 }
 
+// Behind Hostinger's proxy, req.url carries the bind address (0.0.0.0:3000), not the site. The
+// browser-facing origin comes from the forwarded headers. Google rejects a redirect URI on an IP.
+export function publicUrl(req: NextRequest, path: string): URL {
+  const first = (name: string) => req.headers.get(name)?.split(",")[0]?.trim();
+  const host = first("x-forwarded-host") || first("host");
+  const proto = first("x-forwarded-proto") || req.nextUrl.protocol.replace(/:$/, "");
+  return new URL(path, host ? `${proto}://${host}` : req.url);
+}
+
 // 303 so the browser follows with GET after a form POST.
 export function seeOther(req: NextRequest, path: string): Response {
-  return new Response(null, { status: 303, headers: { Location: new URL(path, req.url).toString() } });
+  return new Response(null, { status: 303, headers: { Location: publicUrl(req, path).toString() } });
 }

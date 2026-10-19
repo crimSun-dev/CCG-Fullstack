@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { adminFromRequest } from "@/lib/admin-auth";
+import { publicUrl } from "@/lib/http";
 import { officeSiteRoot, proxyOffice, staffPermissions } from "@/lib/office-bridge";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +20,9 @@ const TYPES: Record<string, string> = {
 
 async function allow(req: NextRequest) {
   const user = await adminFromRequest(req);
-  if (!user) return { response: NextResponse.redirect(new URL("/login", req.url)) };
+  if (!user) return { response: NextResponse.redirect(publicUrl(req, "/login")) };
   const perms = staffPermissions(user.role);
-  if (!perms) return { response: NextResponse.redirect(new URL("/account", req.url)) };
+  if (!perms) return { response: NextResponse.redirect(publicUrl(req, "/account")) };
   return { user, perms };
 }
 
@@ -50,7 +51,7 @@ async function handle(req: NextRequest, parts: string[] | undefined) {
 
   const url = new URL(req.url);
   if (url.pathname === "/office") {
-    return NextResponse.redirect(new URL("/office/", req.url), 308);
+    return NextResponse.redirect(publicUrl(req, "/office/"), 308);
   }
 
   const relParts = parts ?? [];
