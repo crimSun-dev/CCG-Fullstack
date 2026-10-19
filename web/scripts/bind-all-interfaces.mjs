@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 
 // Hostinger sets HOSTNAME to the machine name. Next's standalone server treats that
 // as the listen address and exits, which the proxy reports as 503.
@@ -16,3 +16,9 @@ if (next === source) {
 
 writeFileSync(file, next);
 console.log("Standalone server listens on 0.0.0.0");
+
+// Standalone does not include these on its own. Without them the server
+// boots and then has nothing to serve.
+const standalone = ".next/standalone";
+cpSync("public", `${standalone}/public`, { recursive: true });
+cpSync(".next/static", `${standalone}/.next/static`, { recursive: true });

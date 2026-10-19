@@ -1,4 +1,7 @@
-# pnpm 11 reads this file and ignores package.json#pnpm. Hostinger installs with pnpm 11.
+# pnpm 11 reads this file and ignores package.json#pnpm and .npmrc.
+# Hoisted install is what Next's standalone tracer can follow. Isolated pnpm
+# links leave the published server unable to start, which Hostinger shows as 503.
+nodeLinker: hoisted
 allowBuilds:
   "@prisma/engines": true
   prisma: true
