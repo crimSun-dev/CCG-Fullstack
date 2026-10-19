@@ -1,0 +1,42 @@
+/* /login is a plain HTML response (src/lib/login-page.ts), outside the Next.js layout.
+   It shares the site's Operate field: off-white ground, black type, blue only where it acts. */
+@font-face { font-family: "Archivo CCG"; src: url("/fonts/archivo-var.woff2") format("woff2-variations"); font-weight: 100 900; font-display: swap; }
+:root { --ink: #080b10; --soft: #475263; --line: #d3d9e0; --paper: #f1f3f5; --blue: #1088f8; --blue-deep: #0a5fbf; --black: #030507; accent-color: var(--blue-deep); caret-color: var(--blue-deep); }
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; background: var(--paper); }
+body { margin: 0; min-height: 100svh; display: flex; flex-direction: column; background: var(--paper); color: var(--ink);
+  font: 400 1rem/1.55 "Archivo CCG", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+::selection { background: var(--blue); color: #fff; }
+:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 3px; border-radius: 2px; }
+.auth-head { position: relative; height: 4.75rem; border-bottom: 1px solid #1a2029; display: flex; align-items: center; padding-inline: clamp(1.25rem, 5vw, 5.5rem); background: var(--black); }
+.auth-head::after { content: ""; position: absolute; left: 0; bottom: -1px; height: 1px; width: calc(clamp(1.25rem, 5vw, 5.5rem) + 11.5rem); background: linear-gradient(90deg, var(--blue), transparent); }
+.auth-home { display: inline-flex; align-items: center; gap: 0.62rem; color: #eef2f6; text-decoration: none; }
+.auth-home > span { display: flex; flex-direction: column; font: 800 0.86rem/0.92 "Archivo CCG", system-ui, sans-serif; letter-spacing: -0.02em; }
+.auth-home img { display: block; height: 2.7rem; width: auto; }
+.auth { flex: 1; display: grid; place-items: start center; padding: clamp(3rem, 12vh, 7rem) clamp(1.25rem, 5vw, 2rem) 4rem; }
+.auth__panel { width: 100%; max-width: 26rem; }
+h1 { margin: 0 0 1.75rem; font: 800 clamp(2.2rem, 1.6rem + 2.6vw, 3rem)/1 "Archivo CCG", system-ui, sans-serif; letter-spacing: -0.04em; }
+p { margin: 0; }
+form { display: grid; gap: 1.1rem; }
+label { display: grid; gap: 0.4rem; font-size: 0.9rem; font-weight: 560; }
+input { width: 100%; min-height: 3rem; padding: 0.65rem 0.8rem; font: inherit; font-size: 1rem; color: var(--ink);
+  background: #fff; border: 1px solid #b9c2cd; border-radius: 2px; transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+input:hover { border-color: var(--soft); }
+input:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; border-color: var(--blue-deep); }
+button, .auth-google { font: inherit; cursor: pointer; }
+form button[type="submit"] { position: relative; isolation: isolate; overflow: hidden; width: 100%; min-height: 3.25rem; margin-top: 0.4rem;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 1.2rem 0 1.35rem;
+  border: 1px solid var(--ink); border-radius: 2px; background: var(--ink); color: #fff;
+  font-family: "Archivo CCG", system-ui, sans-serif; font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; }
+form button[type="submit"]::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--blue-deep); clip-path: inset(0 100% 0 0); transition: clip-path 380ms cubic-bezier(0.23, 1, 0.32, 1); }
+form button[type="submit"] svg { width: 1.05rem; height: 0.7rem; transition: translate 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+form button[type="submit"]:hover::before { clip-path: inset(0 0 0 0); }
+form button[type="submit"]:hover svg { translate: 0.3rem 0; }
+form button[type="submit"]:active { transform: translateY(1px); }
+section { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--line); display: grid; gap: 0.75rem; }
+.auth-google { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 3rem; padding: 0 1rem;
+  background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 2px; text-decoration: none; font-weight: 560; }
+a.auth-google:hover { border-color: var(--soft); }
+.auth-google:disabled { cursor: not-allowed; color: #6b7686; background: #e9ecef; }
+#google-unavailable { font-size: 0.875rem; color: var(--soft); }
+[role="alert"] { margin-bottom: 1.25rem; padding: 0.75rem 1rem; background: #fdeaea; border: 1px solid #f2bcbc; color: #6b0f0f; font-size: 0.9rem; }

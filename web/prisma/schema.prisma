@@ -1,0 +1,112 @@
+// CK Coaching Group public site. CHECK constraints live in the migration SQL;
+// Prisma's schema language cannot express them (TDD Section 3).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Program {
+  code               String  @id
+  title              String
+  summary            String
+  durationLabel      String  @default("") @map("duration_label")
+  sessionsPerYear    Int?    @map("sessions_per_year")
+  sessionLengthLabel String? @map("session_length_label")
+  capacity           Int?
+  formatLabel        String? @map("format_label")
+
+  @@map("program")
+}
+
+model Person {
+  id        String  @id @default(uuid()) @db.Uuid
+  name      String
+  role      String?
+  bio       String
+  sortOrder Int     @map("sort_order")
+  isFounder Boolean @default(false) @map("is_founder")
+
+  @@map("person")
+}
+
+model Office {
+  id      String  @id @default(uuid()) @db.Uuid
+  city    String
+  kind    String
+  address String?
+
+  @@map("office")
+}
+
+model Stat {
+  id         String @id @default(uuid()) @db.Uuid
+  valueText  String @map("value_text")
+  statement  String
+  sourceName String @map("source_name")
+  sourceDate String @map("source_date")
+
+  @@map("stat")
+}
+
+model Pressure {
+  id        String @id @default(uuid()) @db.Uuid
+  title     String
+  sortOrder Int    @map("sort_order")
+
+  @@map("pressure")
+}
+
+model Lead {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String
+  phone        String?
+  organization String?
+  interest     String
+  message      String?
+  consentAt    DateTime @map("consent_at")
+  emailStatus  String   @default("PENDING") @map("email_status")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([email, createdAt])
+  @@map("lead")
+}
+
+model LeadAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  ipHash    String   @map("ip_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ipHash, createdAt])
+  @@map("lead_attempt")
+}
+
+model AdminUser {
+  id           String         @id @default(uuid()) @db.Uuid
+  email        String         @unique
+  name         String
+  passwordHash String         @map("password_hash")
+  role         String
+  // Google OpenID Connect `sub`, stored on the first verified-email match. Null until then.
+  googleSub    String?        @unique @map("google_sub")
+  sessions     AdminSession[]
+
+  @@map("admin_user")
+}
+
+model AdminSession {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      AdminUser @relation(fields: [userId], references: [id])
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  @@index([userId])
+  @@map("admin_session")
+}
