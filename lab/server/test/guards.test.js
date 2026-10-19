@@ -36,7 +36,13 @@ function sameOriginPost(app, path) {
 test('serves ce-config.js switching the page to the API store', async () => {
   const res = await request(appWith()).get('/ce-config.js').expect(200);
   assert.match(res.headers['content-type'], /javascript/);
-  assert.match(res.text, /^window\.CE_STORE = .api.;\s*$/);
+  assert.match(res.text, /^window\.CE_STORE = .api.;\n$/);
+  assert.doesNotMatch(res.text, /CE_CCG_SITE/);
+});
+
+test('ce-config.js names the CCG site origin for the founder pill, and nothing else', async () => {
+  const res = await request(appWith({ ccgSiteUrl: 'https://ccg.example' })).get('/ce-config.js').expect(200);
+  assert.equal(res.text, "window.CE_STORE = 'api';\nwindow.CE_CCG_SITE = \"https://ccg.example\";\n");
 });
 
 test('serves the static wall and it loads ce-config.js', async () => {

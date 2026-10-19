@@ -38,7 +38,7 @@ The public site for CK Coaching Group (CCG), a CEO coaching practice founded by 
 - Public registration (email, password, full name; always MEMBER). Every signed-in account changes its full name, password, and email at `/account`.
 - A forgotten password is reset at `/forgot-password` with a 6-digit emailed code; an email change is confirmed with a code sent to the new address, and the old address is told. Codes are single use, expire in 15 minutes, and die after 5 wrong tries. A reset request never says whether an email has an account.
 - Account email carries the CCG mark and blues (#030507, #1088f8, #3e9ff8, #70b8f8) and links to `PUBLIC_SITE_URL`, never the bind address.
-- CK Virtual Lab is a separate app with its own database. The lab button posts to `/lab/launch`, which hands the lab a 60-second HMAC-signed assertion (account id, email, full name, role; no password) in the URL fragment. Google sign-in only when a client is configured.
+- CK Virtual Lab (`../lab`) is served by this site at `/lab` with its own database (`LAB_DATABASE_URL`); the build copies it into the standalone output and migrates its database. The lab button posts to `/lab/launch`, which hands the lab a 60-second HMAC-signed assertion (account id, email, full name, role; no password) in the URL fragment. The lab admits only STAFF, EDITOR and ADMIN who arrive that way. Google sign-in only when a client is configured.
 - `G:` is exFAT; build and run on the NTFS copy `C:\Users\Draven Chen\src\ccg-public-web`.
 
 ## Brand Commitments

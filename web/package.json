@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "pnpm install --config.node-linker=hoisted --frozen-lockfile && node scripts/assert-hoisted.mjs && prisma generate && node scripts/migrate.mjs && tsx scripts/seed-if-empty.ts && next build --webpack && node scripts/bind-all-interfaces.mjs",
+    "build": "pnpm install --config.node-linker=hoisted --frozen-lockfile && node scripts/assert-hoisted.mjs && prisma generate && node scripts/migrate.mjs && tsx scripts/seed-if-empty.ts && next build --webpack && node scripts/bind-all-interfaces.mjs && node scripts/bundle-lab.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "prisma": "prisma",

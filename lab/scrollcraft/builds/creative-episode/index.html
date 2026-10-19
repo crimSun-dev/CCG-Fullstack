@@ -927,7 +927,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <!-- The building's own wayfinding. The only navigation on the page. -->
     <nav class="sign" aria-label="Corridor sign">
       <ol>
-        <li><span class="pill"><span class="pill__arrow"><svg aria-hidden="true"><use href="#i-up"/></svg></span>Founder &amp; Story Producer<span class="sr-only">, straight ahead</span></span></li>
+        <li><a class="pill" id="pill-founder"><span class="pill__arrow"><svg aria-hidden="true"><use href="#i-up"/></svg></span>Founder &amp; Story Producer<span class="sr-only">, straight ahead, back to the CCG site</span></a></li>
         <li><button type="button" class="pill" id="pill-black-box" data-room="black_box" data-state="idle" aria-haspopup="dialog" aria-controls="room-sheet"><span class="pill__arrow"><svg aria-hidden="true"><use href="#i-up"/></svg></span><span>Black Box<span class="pill__state" id="black-box-state"></span></span><span class="sr-only" id="black-box-sr">, straight ahead</span></button></li>
         <li><button type="button" class="pill" id="pill-ck-hall" data-room="ck_hall" aria-haspopup="dialog" aria-controls="room-sheet"><span class="pill__arrow"><svg aria-hidden="true"><use href="#i-left"/></svg></span><span>CK Hall<span class="lamp" id="ck-hall-lamp" aria-hidden="true">ON AIR</span></span><span class="sr-only" id="ck-hall-sr">, to the left</span></button></li>
         <li><a class="pill pill--here" href="#wall" aria-current="page"><span class="pill__arrow"><svg aria-hidden="true"><use href="#i-left"/></svg></span>Creative Episode<span class="sr-only">, you are here</span></a></li>
@@ -2259,6 +2259,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
   var rooms = CE.rooms;
   var $ = function (id) { return document.getElementById(id); };
+  // The CCG site's origin arrives from the wall server (ce-config.js). The page never names a host.
+  var ccgSite = window.CE_CCG_SITE;
+  if ($('pill-founder') && typeof ccgSite === 'string' && /^https?:\/\/[^/]+$/.test(ccgSite)) {
+    $('pill-founder').href = ccgSite + '/';
+  }
   var TZ = 'Asia/Jakarta';
   var clock = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
   var longDay = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' });

@@ -1,10 +1,11 @@
-# Render Blueprint for the Creative Episode wall.
-# Runs from the repo root, not server/: Render hides files outside rootDir at runtime,
-# and the server serves the page from ../scrollcraft/builds/creative-episode.
+# Render Blueprint for CK Virtual Lab (the Creative Episode wall), inside the CCG repo at lab/.
+# In Render, point the Blueprint at lab/render.yaml. rootDir is lab/, not lab/server/: Render hides
+# files outside rootDir at runtime, and the server serves the page from ../scrollcraft/builds/creative-episode.
 services:
   - type: web
     name: creative-episode
     runtime: node
+    rootDir: lab
     plan: free
     region: singapore
     buildCommand: npm ci --prefix server && npm run migrate --prefix server

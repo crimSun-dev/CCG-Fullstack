@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { currentAdmin } from "@/lib/admin-auth";
 import { LabButton } from "@/components/LabButton";
 import { canEditContent } from "@/lib/admin-mutation";
-import { staffPermissions } from "@/lib/office-bridge";
 import { canReadLeads } from "@/lib/session-service";
 import { db } from "@/lib/db";
 import { liveContent } from "@/lib/services";
@@ -54,7 +53,6 @@ export default async function AdminPage({ searchParams }: Props) {
           <p className="admin-links">
             <Link href="/account">Your account</Link>
             {canManageRoles(admin.role) && <Link href="/admin/users">Accounts</Link>}
-            {staffPermissions(admin.role) && <Link href="/office/">Virtual office</Link>}
           </p>
           <form method="post" action="/admin/logout">
             <button type="submit" className="op-quiet">
@@ -64,7 +62,7 @@ export default async function AdminPage({ searchParams }: Props) {
         </div>
         {params.saved && <p role="status">Saved {params.saved}.</p>}
         {params.error === "lab" && (
-          <p role="alert">CK Virtual Lab has no public address on this server yet, so the button cannot open it.</p>
+          <p role="alert">CK Virtual Lab is not set up on this server yet, so the button cannot open it.</p>
         )}
         {params.error && params.error !== "lab" && <p role="alert">Not saved: {params.error}.</p>}
 

@@ -32,6 +32,15 @@ test('CSS: Black Box in use is indigo and yellow and never animated; the ON AIR 
   for (const rule of CSS.split('}').filter((r) => r.includes('var(--on-air)'))) assert.match(rule, /\.lamp\.is-on\s*\{[^{]*$/, rule);
 });
 
+test('Founder & Story Producer opens the configured CCG site', () => {
+  const unlabeled = corridorPage();
+  assert.equal(unlabeled.$('pill-founder').href, undefined);
+  const linked = corridorPage({ CE_CCG_SITE: 'https://ccg.example' });
+  assert.equal(linked.$('pill-founder').href, 'https://ccg.example/');
+  const refused = corridorPage({ CE_CCG_SITE: 'javascript:alert(1)' });
+  assert.equal(refused.$('pill-founder').href, undefined);
+});
+
 test('the corridor on the local backend', async (t) => {
   const page = corridorPage();
   const { $, CE } = page;

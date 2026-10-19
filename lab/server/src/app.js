@@ -14,7 +14,12 @@ const { sendError } = require('./errors');
 const { createHub } = require('./live');
 
 const SITE_DIR = path.join(__dirname, '..', '..', 'scrollcraft', 'builds', 'creative-episode');
-const CE_CONFIG = "window.CE_STORE = 'api';\n";
+function ceConfig(ccgSiteUrl) {
+  // The founder pill reads CE_CCG_SITE. Absent, the pill stays a label.
+  let source = "window.CE_STORE = 'api';\n";
+  if (ccgSiteUrl) source += `window.CE_CCG_SITE = ${JSON.stringify(ccgSiteUrl)};\n`;
+  return source;
+}
 
 /* rateLimit: { notes: { limit, windowMs }, whiteboard: { limit, windowMs }, hub: { limit, windowMs } } overrides, mainly for tests.
  * trustProxy: proxy hops in front (Render: 1). Without it, HTTPS behind a proxy looks like http and every write fails the Origin check.
@@ -53,7 +58,7 @@ function createApp({ pool, companyId, rateLimit = {}, siteDir = SITE_DIR, trustP
 
   // Tells index.html it is being served by this server, so it uses the API store.
   app.get('/ce-config.js', signedIn, (req, res) => {
-    res.type('application/javascript').set('Cache-Control', 'no-store').send(CE_CONFIG);
+    res.type('application/javascript').set('Cache-Control', 'no-store').send(ceConfig(ccgSiteUrl));
   });
 
   const v1 = express.Router();

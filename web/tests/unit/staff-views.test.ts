@@ -7,12 +7,19 @@ import { verifyLabAssertion } from "@/lib/token-assertion";
 const SECRET = "s".repeat(40);
 let current: AdminUser | null = null;
 let labConfigured = true;
+let labEmbedded = false;
 const findMany = vi.fn(async (_args?: unknown) => []);
 const listPeople = vi.fn(async () => []);
 
 vi.mock("@/lib/admin-auth", () => ({ currentAdmin: async () => current, adminFromRequest: async () => current }));
-vi.mock("@/lib/env", () => ({
-  env: () => (labConfigured ? { LAB_URL: "https://lab.example/", LAB_ASSERTION_SECRET: SECRET } : {}),
+vi.mock("@/lib/env", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/env")>()),
+  env: () =>
+    labEmbedded
+      ? { LAB_DATABASE_URL: "postgresql://lab/db", LAB_ASSERTION_SECRET: SECRET }
+      : labConfigured
+        ? { LAB_URL: "https://lab.example/", LAB_ASSERTION_SECRET: SECRET }
+        : {},
 }));
 vi.mock("@/lib/db", () => ({ db: () => ({ lead: { findMany, count: async () => 0 } }) }));
 vi.mock("@/lib/services", () => ({ liveContent: () => ({ listPublicPrograms: async () => [], listPeople }) }));
@@ -42,10 +49,19 @@ function findAll(node: unknown, match: (el: ReactElement) => boolean, out: React
   return out;
 }
 
+// The visible words of a rendered element, without a DOM.
+function text(node: unknown): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(text).join("");
+  if (isValidElement(node)) return text((node.props as { children?: unknown }).children);
+  return "";
+}
+
 beforeEach(() => {
   findMany.mockClear();
   listPeople.mockClear();
   labConfigured = true;
+  labEmbedded = false;
 });
 
 describe("enquiry list (/admin)", () => {
@@ -86,13 +102,25 @@ describe("CK Virtual Lab button", () => {
     const el = LabButton({ role })!;
     expect(el.props).toMatchObject({ method: "post", action: "/lab/launch" });
     const [img] = findAll(el, (e) => e.type === "img");
-    expect(img.props).toMatchObject({ src: "/brand/ck-virtual-lab.png" });
-    expect(findAll(el, (e) => e.type === "button")[0].props).toMatchObject({ type: "submit" });
+    expect(img.props).toMatchObject({ src: "/brand/ck-virtual-lab-mark.png" });
+    const button = findAll(el, (e) => e.type === "button")[0];
+    expect(button.props).toMatchObject({ type: "submit", disabled: false });
+    expect(text(button)).toBe("Open CK Virtual Lab" + "Staff only");
   });
 
-  it("stays visible when the lab hand-off is not configured", () => {
+  it("stays visible but shut, and says why, when the lab has no address", () => {
     labConfigured = false;
-    expect(LabButton({ role: "ADMIN" })!.props).toMatchObject({ method: "post", action: "/lab/launch" });
+    const el = LabButton({ role: "ADMIN" })!;
+    expect(el.props).toMatchObject({ method: "post", action: "/lab/launch" });
+    const button = findAll(el, (e) => e.type === "button")[0];
+    expect(button.props).toMatchObject({ disabled: true, "aria-describedby": "lab-launch-note" });
+    expect(text(button)).toBe("CK Virtual Lab" + "Not connected yet");
+  });
+
+  it("the admin page no longer links to the old virtual office", async () => {
+    current = user("ADMIN");
+    const tree = await openAdmin();
+    expect(findAll(tree, (e) => (e.props as { href?: string }).href === "/office/")).toHaveLength(0);
   });
 
   it("is on the staff admin page", async () => {
@@ -125,6 +153,16 @@ describe("POST /lab/launch", () => {
     expect((await post()).headers.get("location")).toMatch(/\/login$/);
     current = user("ADMIN");
     expect((await post({ origin: "https://evil.example" })).status).toBe(403);
+  });
+
+  it("sends staff into this site's own /lab when the lab is served here", async () => {
+    current = user("STAFF");
+    labEmbedded = true;
+    const res = await post({ "x-forwarded-host": "ajarin.org", "x-forwarded-proto": "https" });
+    const location = new URL(res.headers.get("location")!);
+    expect(location.origin + location.pathname).toBe("https://ajarin.org/lab");
+    expect(verifyLabAssertion(location.hash.replace(/^#ccg=/, ""), SECRET)).toMatchObject({ role: "STAFF" });
+    expect(LabButton({ role: "STAFF" })!.props.children.props.disabled).toBe(false);
   });
 
   it("sends staff back to admin when the lab is not configured", async () => {

@@ -474,6 +474,12 @@
       return true;
     }
     function url() {
+      // Under a prefix (the CCG site serves the lab at /lab with <base href="/lab/">) the base decides.
+      var base = typeof document !== 'undefined' && document && document.baseURI;
+      if (base && typeof URL === 'function') {
+        var u = new URL('v1/live', base);
+        return (u.protocol === 'https:' ? 'wss://' : 'ws://') + u.host + u.pathname;
+      }
       var dir = location.pathname.replace(/[^/]*$/, '');
       return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + dir + 'v1/live';
     }

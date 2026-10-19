@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { adminFromRequest } from "@/lib/admin-auth";
-import { env } from "@/lib/env";
-import { isSameOrigin, seeOther } from "@/lib/http";
+import { env, labTarget } from "@/lib/env";
+import { isSameOrigin, publicUrl, seeOther } from "@/lib/http";
 import { isStaffRole } from "@/lib/session-service";
 import { issueLabAssertion, labEntryUrl } from "@/lib/token-assertion";
 
@@ -13,11 +13,14 @@ export async function POST(req: NextRequest) {
   if (!user) return seeOther(req, "/login");
   if (!isStaffRole(user.role)) return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const { LAB_URL, LAB_ASSERTION_SECRET } = env();
-  if (!LAB_URL || !LAB_ASSERTION_SECRET) return seeOther(req, "/admin?error=lab");
-  const token = issueLabAssertion(user, LAB_ASSERTION_SECRET)!;
+  const e = env();
+  const target = labTarget(e);
+  if (!target) return seeOther(req, "/admin?error=lab");
+  // Served here (LAB_DATABASE_URL), the lab is this site's own /lab.
+  const labUrl = target === "external" ? e.LAB_URL! : publicUrl(req, "/lab").toString();
+  const token = issueLabAssertion(user, e.LAB_ASSERTION_SECRET!)!;
   return new Response(null, {
     status: 303,
-    headers: { Location: labEntryUrl(LAB_URL, token), "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
+    headers: { Location: labEntryUrl(labUrl, token), "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
   });
 }
