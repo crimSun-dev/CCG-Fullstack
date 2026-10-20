@@ -1,7 +1,7 @@
 ## 1. Baseline Verification and Schema Migration
 
 - [x] 1.1 Re-read `CRIMSUN_POOL/ACCOUNT_SKELETON_CCG_WEBSITE.md`, `AdminUser` and `AdminSession` in `web/prisma/schema.prisma`, `web/src/app/admin/login/route.ts`, `web/src/lib/session-service.ts`, and `web/src/lib/admin-auth.ts`; verify that `SESSION_COOKIE` is `"ccg_session"` before adding the Google control.
-- [ ] 1.2 Add one nullable unique Google subject column (`googleSub String? @unique @map("google_sub")`) on `AdminUser` (`admin_user`) via a Prisma 7.10 migration while keeping `passwordHash` required and adding no `username` column or public user table; apply the migration and regenerate the Prisma client on the NTFS copy (`C:\Users\Draven Chen\src\ccg-public-web`) and verify `pnpm check:prisma-pin` and `pnpm db:migrate` exit `0`.
+- [x] 1.2 Add one nullable unique Google subject column (`googleSub String? @unique @map("google_sub")`) on `AdminUser` (`admin_user`) via a Prisma 7.10 migration while keeping `passwordHash` required and adding no `username` column or public user table; apply the migration and regenerate the Prisma client on the NTFS copy (`C:\Users\Draven Chen\src\ccg-public-web`) and verify `pnpm check:prisma-pin` and `pnpm db:migrate` exit `0`.
 
 ## 2. OpenID Connect Routes, Link Logic, and Login Screen Control
 
