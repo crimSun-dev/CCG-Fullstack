@@ -479,6 +479,33 @@ html:not([data-motion="on"]) .hero__line { grid-column: 1 / -1; }
 .coach__tagline { margin-top: var(--sc-5); font-family: var(--sc-font-display); font-weight: 620; font-size: var(--sc-t-xl); line-height: 1.15; letter-spacing: -0.02em; max-width: 24ch; }
 .coach__role { margin-top: var(--sc-7); font-size: var(--sc-t-sm); color: var(--sc-ink-soft); }
 .coach__bio { margin-top: var(--sc-3); font-size: var(--sc-t-lg); line-height: 1.5; max-width: 42ch; }
+.coach__lead {
+  display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--sc-6); align-items: end;
+}
+.coach__portrait {
+  display: block; width: 100%; height: auto; max-width: 32rem; justify-self: end;
+  margin-top: clamp(1.5rem, 4vh, 3rem);
+  /* No frame: the stage dissolves into the ground on every side, longest toward the copy and the floor. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 28%, #000 84%, transparent), linear-gradient(180deg, transparent, #000 16%, #000 68%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, #000 28%, #000 84%, transparent), linear-gradient(180deg, transparent, #000 16%, #000 68%, transparent);
+  mask-composite: intersect;
+  filter: saturate(0.92) contrast(1.04);
+}
+@media (max-width: 860px) {
+  .coach__lead { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .coach__portrait {
+    order: -1; justify-self: stretch; max-width: none; margin-top: var(--sc-6);
+    width: calc(100% + 2 * var(--sc-gutter)); margin-inline: calc(-1 * var(--sc-gutter));
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 56%, transparent);
+    mask-image: linear-gradient(180deg, transparent, #000 14%, #000 56%, transparent);
+  }
+  /* The name rises into the photo's faded floor. */
+  .coach__intro { position: relative; margin-top: -5.5rem; }
+  .coach__intro .coach__name { margin-top: 0; }
+}
+/* With room beside the title, the portrait rises to stand next to it. */
+@media (min-width: 1200px) { .coach__portrait { margin-top: -9rem; max-width: 34rem; } }
 
 /* Team */
 .team { list-style: none; padding: 0; border-top: 1px solid var(--sc-hairline); }
@@ -588,6 +615,26 @@ html:not([data-motion="on"]) .hero__line { grid-column: 1 / -1; }
 .admin-forms { margin-top: var(--sc-5); display: grid; gap: var(--sc-4); }
 .admin-form { background: #fff; border: 1px solid var(--sc-hairline); padding: var(--sc-5); display: grid; gap: var(--sc-4); }
 .admin-form > p { margin: 0; }
+
+/* Profile picture: the face first, at the size a colleague sees it largest, then the controls. */
+.avatar-edit__row { display: flex; align-items: center; gap: var(--sc-4); flex-wrap: wrap; }
+.avatar-edit__face {
+  flex: none; width: 6rem; height: 6rem; border-radius: 50%; object-fit: cover;
+  box-shadow: 0 0 0 1px var(--ccg-paper-line), 0 4px 12px -6px rgb(8 11 16 / 0.35);
+}
+.avatar-edit__face--none {
+  display: grid; place-items: center; background: var(--ccg-blue-deep); color: #fff;
+  font-family: var(--sc-font-display); font-weight: 750; font-size: 2rem; letter-spacing: 0.02em;
+}
+.avatar-edit__note { margin: 0; max-width: 46ch; color: var(--sc-ink-soft); font-size: var(--sc-t-sm); }
+.avatar-edit__problem { color: #6b0f0f; font-size: var(--sc-t-sm); }
+.operate input[type="file"] { padding: 0.45rem; cursor: pointer; }
+.operate input[type="file"]::file-selector-button {
+  margin-right: 0.8rem; padding: 0.45rem 0.9rem; font: inherit; font-weight: 560; cursor: pointer;
+  background: var(--ccg-paper); color: var(--ccg-paper-ink); border: 1px solid var(--ccg-paper-line); border-radius: var(--sc-r-sm);
+}
+.operate input[type="file"]::file-selector-button:hover { border-color: var(--ccg-paper-soft); background: #fff; }
+.operate button:disabled { cursor: progress; opacity: 0.6; }
 .status-flag { font-weight: 600; color: #8a4b00; }
 
 /* ------------------------------------------------------------ responsive -- */
