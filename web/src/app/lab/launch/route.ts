@@ -1,7 +1,9 @@
 import type { NextRequest } from "next/server";
 import { adminFromRequest } from "@/lib/admin-auth";
 import { env, labTarget } from "@/lib/env";
+import { avatarPath } from "@/lib/avatar";
 import { isSameOrigin, publicUrl, seeOther } from "@/lib/http";
+import { avatarStore } from "@/lib/services";
 import { isStaffRole } from "@/lib/session-service";
 import { issueLabAssertion, labEntryUrl } from "@/lib/token-assertion";
 
@@ -18,7 +20,10 @@ export async function POST(req: NextRequest) {
   if (!target) return seeOther(req, "/admin?error=lab");
   // Served here (LAB_DATABASE_URL), the lab is this site's own /lab.
   const labUrl = target === "external" ? e.LAB_URL! : publicUrl(req, "/lab").toString();
-  const token = issueLabAssertion(user, e.LAB_ASSERTION_SECRET!)!;
+  // The picture's address as the lab's visitors will load it: absolute, since the lab may live on LAB_URL.
+  const pictured = await avatarStore().version(user.id);
+  const avatar = pictured ? new URL(avatarPath(user.id, pictured), e.PUBLIC_SITE_URL ?? publicUrl(req, "/")).toString() : null;
+  const token = issueLabAssertion(user, e.LAB_ASSERTION_SECRET!, Date.now(), avatar)!;
   return new Response(null, {
     status: 303,
     headers: { Location: labEntryUrl(labUrl, token), "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },

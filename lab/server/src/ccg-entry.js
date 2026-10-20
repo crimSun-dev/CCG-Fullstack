@@ -15,10 +15,16 @@ const { SESSION_HOURS, cookieHeader } = require('./lab-session');
 
 const ISSUER = 'ccg';
 const AUDIENCE = 'ck-virtual-lab';
+// A removal notice is signed for its own audience, so it can never be replayed as a way in, nor a
+// hand-off as a removal.
+const REMOVE_AUDIENCE = 'ck-virtual-lab:remove';
 const STAFF_ROLES = new Set(['ADMIN', 'EDITOR', 'STAFF']);
 const MAX_LIFE_SECONDS = 300;   // CCG issues 60; anything longer was not minted by it
 const LEEWAY_SECONDS = 15;      // clock drift between the two hosts
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The profile picture's URL on the CCG site (013). Optional: absent or null means none.
+const AVATAR_RE = /^https?:\/\/[^\s"'<>]+$/;
+const AVATAR_MAX = 512;
 
 function sign(secret, body) {
   return crypto.createHmac('sha256', secret).update(body).digest('base64url');
@@ -26,6 +32,15 @@ function sign(secret, body) {
 
 /* The claims, or null. Checks signature (constant time), then iss, aud, v, role, shape, and time. */
 function verifyAssertion(token, secret, nowMs = Date.now()) {
+  const c = signedClaims(token, secret, nowMs);
+  if (!c || c.aud !== AUDIENCE || !STAFF_ROLES.has(c.role)) return null;
+  if (typeof c.email !== 'string' || !c.email.includes('@') || typeof c.name !== 'string' || !c.name.trim()) return null;
+  if (c.avatar != null && (typeof c.avatar !== 'string' || c.avatar.length > AVATAR_MAX || !AVATAR_RE.test(c.avatar))) return null;
+  return c;
+}
+
+/* The signature and timing checks a hand-off and a removal notice share. Null when they fail. */
+function signedClaims(token, secret, nowMs) {
   if (typeof token !== 'string' || token.length > 4096) return null;
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
@@ -38,13 +53,26 @@ function verifyAssertion(token, secret, nowMs = Date.now()) {
   } catch (e) {
     return null;
   }
-  if (!c || c.v !== 1 || c.iss !== ISSUER || c.aud !== AUDIENCE || !STAFF_ROLES.has(c.role)) return null;
+  if (!c || c.v !== 1 || c.iss !== ISSUER) return null;
   if (typeof c.sub !== 'string' || !UUID_RE.test(c.sub) || typeof c.jti !== 'string' || !UUID_RE.test(c.jti)) return null;
-  if (typeof c.email !== 'string' || !c.email.includes('@') || typeof c.name !== 'string' || !c.name.trim()) return null;
   if (!Number.isInteger(c.iat) || !Number.isInteger(c.exp) || c.exp <= c.iat || c.exp - c.iat > MAX_LIFE_SECONDS) return null;
   const now = Math.floor(nowMs / 1000);
   if (c.iat > now + LEEWAY_SECONDS || c.exp + LEEWAY_SECONDS <= now) return null;
   return c;
+}
+
+/* A CCG removal notice (web/src/lib/token-assertion.ts issueLabRemoval): { v, iss, aud, sub, iat, exp, jti }. */
+function verifyRemoval(token, secret, nowMs = Date.now()) {
+  const c = signedClaims(token, secret, nowMs);
+  return c && c.aud === REMOVE_AUDIENCE ? c : null;
+}
+
+/* Records a jti inside the caller's transaction. False when it was already used. */
+async function spend(client, jti) {
+  await client.query("DELETE FROM ccg_assertions_used WHERE used_at < now() - interval '1 day'");
+  const used = await client.query(
+    'INSERT INTO ccg_assertions_used (jti) VALUES ($1) ON CONFLICT DO NOTHING RETURNING jti', [jti]);
+  return used.rowCount > 0;
 }
 
 /* secret: LAB_ASSERTION_SECRET, shared with the CCG site. hub: told when a new name joins.
@@ -63,17 +91,18 @@ function ccgRouter({ pool, companyId, hub, secret, sessions }) {
     let token;
     try {
       await client.query('BEGIN');
-      await client.query("DELETE FROM ccg_assertions_used WHERE used_at < now() - interval '1 day'");
-      const used = await client.query(
-        'INSERT INTO ccg_assertions_used (jti) VALUES ($1) ON CONFLICT DO NOTHING RETURNING jti', [claims.jti]);
-      if (!used.rowCount) {
+      if (!(await spend(client, claims.jti))) {
         await client.query('ROLLBACK');
         return sendError(res, 409, 'assertion_used', 'This CCG sign-in link was already used. Open the lab from the CCG site again.');
       }
       const before = await client.query('SELECT 1 FROM people WHERE company_id = $1 AND ccg_sub = $2', [companyId, claims.sub]);
       const { rows } = await client.query(
         'SELECT wall_private.hq_claim_ccg($1, $2, $3, $4) AS person', [companyId, claims.sub, claims.email, claims.name]);
-      person = rows[0].person;
+      // Every entry brings the current picture, so a changed or removed one follows on the next visit.
+      const pic = await client.query(
+        'UPDATE people SET avatar_url = $2 WHERE id = $1 RETURNING wall_private.hq_person_json(people) AS person',
+        [rows[0].person.id, claims.avatar || null]);
+      person = pic.rows[0].person;
       token = await sessions.start(client, { personId: person.id, role: claims.role });
       await client.query('COMMIT');
       isNew = !before.rowCount;
@@ -87,6 +116,34 @@ function ccgRouter({ pool, companyId, hub, secret, sessions }) {
     res.set('Cache-Control', 'no-store')
       .append('Set-Cookie', cookieHeader(token, SESSION_HOURS * 3600, req.secure))
       .json({ person, verified: true, created: isNew });
+  });
+
+  /* The CCG site cleared this account's staff: the person, their sessions and everything they made go.
+   * Answers 200 whether or not the account ever entered, so CCG can send it again safely. */
+  router.post('/remove', async (req, res) => {
+    if (!secret) return sendError(res, 404, 'not_found', 'Not found');
+    const claims = verifyRemoval(req.body && req.body.token, secret);
+    if (!claims) return sendError(res, 401, 'invalid_assertion', 'This removal notice is not valid.');
+
+    const client = await pool.connect();
+    let removed;
+    try {
+      await client.query('BEGIN');
+      if (!(await spend(client, claims.jti))) {
+        await client.query('ROLLBACK');
+        return sendError(res, 409, 'assertion_used', 'This removal notice was already used.');
+      }
+      const { rows } = await client.query('SELECT wall_private.hq_remove_ccg($1, $2) AS removed', [companyId, claims.sub]);
+      removed = rows[0].removed;
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    if (removed && hub) hub.personRemoved(removed.personId, removed.noteIds);
+    res.set('Cache-Control', 'no-store').json({ removed: !!removed });
   });
 
   /* Who this session is. The page uses it as its name; there is no picker. */
@@ -106,4 +163,4 @@ function ccgRouter({ pool, companyId, hub, secret, sessions }) {
   return router;
 }
 
-module.exports = { ccgRouter, verifyAssertion, ISSUER, AUDIENCE };
+module.exports = { ccgRouter, verifyAssertion, verifyRemoval, ISSUER, AUDIENCE, REMOVE_AUDIENCE };

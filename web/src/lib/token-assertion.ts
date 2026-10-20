@@ -19,6 +19,9 @@ export type LabAssertion = {
   email: string;
   name: string;
   role: "ADMIN" | "EDITOR" | "STAFF";
+  // Absolute URL of the account's profile picture on this site, or null. The lab stores it on every
+  // entry and shows it on the "You" chip and the account's notes (lab migration 013).
+  avatar: string | null;
   iat: number;
   exp: number;
   jti: string; // single use, so a token copied out of a browser history cannot be replayed
@@ -29,7 +32,12 @@ function sign(secret: string, body: string): string {
 }
 
 // Null for a MEMBER: only staff roles may enter the lab.
-export function issueLabAssertion(user: AdminUser, secret: string, nowMs = Date.now()): string | null {
+export function issueLabAssertion(
+  user: AdminUser,
+  secret: string,
+  nowMs = Date.now(),
+  avatar: string | null = null,
+): string | null {
   if (!isStaffRole(user.role)) return null;
   const iat = Math.floor(nowMs / 1000);
   const payload: LabAssertion = {
@@ -40,6 +48,7 @@ export function issueLabAssertion(user: AdminUser, secret: string, nowMs = Date.
     email: user.email,
     name: user.name,
     role: user.role as LabAssertion["role"],
+    avatar,
     iat,
     exp: iat + LAB_ASSERTION_TTL_SECONDS,
     jti: randomUUID(),
@@ -71,4 +80,33 @@ export function labEntryUrl(labUrl: string, token: string): string {
   const url = new URL(labUrl);
   url.hash = `ccg=${token}`;
   return url.toString();
+}
+
+// Clearing STAFF tells the lab to drop the account and everything it made there (lab migration 014).
+// Signed for its own audience, so it is never accepted as a way in, and a hand-off is never a removal.
+export const LAB_REMOVE_AUDIENCE = "ck-virtual-lab:remove";
+
+export type LabRemoval = {
+  v: 1;
+  iss: typeof LAB_ISSUER;
+  aud: typeof LAB_REMOVE_AUDIENCE;
+  sub: string; // the CCG account id the lab's name was claimed with
+  iat: number;
+  exp: number;
+  jti: string;
+};
+
+export function issueLabRemoval(accountId: string, secret: string, nowMs = Date.now()): string {
+  const iat = Math.floor(nowMs / 1000);
+  const payload: LabRemoval = {
+    v: 1,
+    iss: LAB_ISSUER,
+    aud: LAB_REMOVE_AUDIENCE,
+    sub: accountId,
+    iat,
+    exp: iat + LAB_ASSERTION_TTL_SECONDS,
+    jti: randomUUID(),
+  };
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${body}.${sign(secret, body)}`;
 }

@@ -96,8 +96,21 @@ model AdminUser {
   googleSub    String?        @unique @map("google_sub")
   sessions     AdminSession[]
   codes        VerificationCode[]
+  avatar       AccountAvatar?
 
   @@map("admin_user")
+}
+
+// An account's profile picture: a small square the browser already resized. Its own table, so reading
+// a session never loads image bytes. CK Virtual Lab shows it by URL, never by copying it.
+model AccountAvatar {
+  userId      String    @id @map("user_id") @db.Uuid
+  user        AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  image       Bytes
+  contentType String    @map("content_type")
+  updatedAt   DateTime  @map("updated_at")
+
+  @@map("account_avatar")
 }
 
 model AdminSession {

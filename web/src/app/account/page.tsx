@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AvatarForm } from "@/components/AvatarForm";
 import { LabButton } from "@/components/LabButton";
 import { currentAdmin } from "@/lib/admin-auth";
+import { AVATAR_MAX_BYTES, AVATAR_SIZE, avatarPath } from "@/lib/avatar";
 import { env } from "@/lib/env";
+import { avatarStore } from "@/lib/services";
 import { NAME_MAX, PASSWORD_MIN, isStaffRole } from "@/lib/session-service";
 import { canManageRoles } from "@/lib/staff-roles";
 
@@ -15,6 +18,8 @@ const SAVED: Record<string, string> = {
   password: "Your password is changed. Other signed-in devices were signed out.",
   "email-sent": "If that address is free, a 6-digit code is on its way to it. Enter it below.",
   email: "Your email is changed. The old address was told.",
+  avatar: "Your picture is saved. CK Virtual Lab shows it the next time you open the lab from here.",
+  "avatar-removed": "Your picture is removed. CK Virtual Lab drops it the next time you open the lab from here.",
 };
 const ERRORS: Record<string, string> = {
   invalid_name: `Enter your full name (up to ${NAME_MAX} characters).`,
@@ -25,7 +30,15 @@ const ERRORS: Record<string, string> = {
   throttled: "A code was sent less than a minute ago. Check your inbox.",
   invalid_code: "That code is wrong or has expired. Ask for a new one.",
   email_taken: "That email now belongs to another account.",
+  avatar_missing: "Choose a photo first.",
+  avatar_type: "That file is not a photo this site can use. Choose a JPEG, PNG or WebP image.",
+  avatar_size: `That picture is over ${AVATAR_MAX_BYTES / 1024} KB. Choose it again on this page so it can be shrunk, or pick a smaller one.`,
 };
+
+function initialsOf(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0] ?? "?") + (words.length > 1 ? (words.at(-1)?.[0] ?? "") : "")).toUpperCase();
+}
 
 type Props = { searchParams: Promise<{ saved?: string; error?: string }> };
 
@@ -40,6 +53,7 @@ export default async function AccountPage({ searchParams }: Props) {
         ? SAVED[params.saved]
         : undefined;
   const error = params.error ? (ERRORS[params.error] ?? "Not saved.") : undefined;
+  const pictured = await avatarStore().version(user.id);
 
   // The root layout already provides <main>; this page is an Operate surface on the paper field.
   return (
@@ -71,6 +85,13 @@ export default async function AccountPage({ searchParams }: Props) {
         <section className="admin-section">
           <h2>Your details</h2>
           <div className="admin-forms">
+            <AvatarForm
+              src={pictured ? avatarPath(user.id, pictured) : null}
+              initials={initialsOf(user.name)}
+              size={AVATAR_SIZE}
+              maxBytes={AVATAR_MAX_BYTES}
+            />
+
             <form className="admin-form" method="post" action="/account/name">
               <h3>Full name</h3>
               <p>

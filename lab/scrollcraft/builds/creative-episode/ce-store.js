@@ -490,11 +490,13 @@
         try { msg = JSON.parse(ev.data); } catch (e) { return; }
         receive(msg);
       };
-      ws.onclose = function () {
+      ws.onclose = function (ev) {
         var was = open;
         open = false; ws = null;
         Object.keys(edits).forEach(settle);
         if (was || !everOpen) emit('state', false);
+        /* 4401: CCG cleared this account's staff and the lab removed it (014). Reconnecting cannot help. */
+        if (ev && ev.code === 4401) { emit('removed'); return; }
         later();
       };
     }
@@ -586,6 +588,7 @@
         case 'booking': emit('booking', msg.booking); return;
         case 'arrival': emit('arrival', msg.arrival); return;
         case 'person': emit('person', msg.person); return;
+        case 'person:drop': emit('personDrop', msg.id); return;
         case 'follows': emit('follows', msg); return;
       }
     }
@@ -1353,6 +1356,16 @@
       live.on('booking', function (b) { put(b); lastSnap = ''; emit(); });
       live.on('arrival', function (a) { if (a.day >= today()) { putArrival(a); lastSnap = ''; emit(); } });
       live.on('person', function (p) { people[p.id] = p; lastSnap = ''; emit(); });
+      /* A name removed with its CCG account (014): gone from the list at once; the snapshot then brings the
+         bookings, invitations and office days without it. Removed yourself, you are back at sign-in. */
+      live.on('personDrop', function (id) {
+        if (signedIn && id === meId()) { savePerson(null); toSignIn(); return; }
+        delete people[id];
+        follows = follows.filter(function (f) { return f.personId !== id && f.followsId !== id; });
+        lastSnap = ''; emit();
+        refresh();
+      });
+      live.on('removed', function () { if (signedIn) { savePerson(null); toSignIn(); } });
       live.on('follows', function (out) { setFollows(out); lastSnap = ''; emit(); });
     }
     if (BACKEND !== 'neon') refresh();

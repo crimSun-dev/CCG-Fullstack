@@ -22,7 +22,10 @@ vi.mock("@/lib/env", async (importOriginal) => ({
         : {},
 }));
 vi.mock("@/lib/db", () => ({ db: () => ({ lead: { findMany, count: async () => 0 } }) }));
-vi.mock("@/lib/services", () => ({ liveContent: () => ({ listPublicPrograms: async () => [], listPeople }) }));
+vi.mock("@/lib/services", () => ({
+  liveContent: () => ({ listPublicPrograms: async () => [], listPeople }),
+  avatarStore: () => ({ version: async () => null }),
+}));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`REDIRECT ${to}`);

@@ -10,9 +10,11 @@ const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// author_name rides along with every note read or written: the hub name of whoever stuck it (008).
+// author_name rides along with every note read or written: the hub name of whoever stuck it (008),
+// and author_avatar, that name's profile picture from the CCG site (013).
 const COLUMNS = 'id, body, color, revision, author_id,' +
-  ' (SELECT display_name FROM people WHERE people.id = notes.author_id) AS author_name, created_at, updated_at';
+  ' (SELECT display_name FROM people WHERE people.id = notes.author_id) AS author_name,' +
+  ' (SELECT avatar_url FROM people WHERE people.id = notes.author_id) AS author_avatar, created_at, updated_at';
 
 function toNote(row) {
   return {
@@ -22,6 +24,7 @@ function toNote(row) {
     revision: row.revision,
     authorId: row.author_id,
     authorName: row.author_name,
+    authorAvatar: row.author_avatar || null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };

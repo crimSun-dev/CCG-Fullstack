@@ -107,6 +107,12 @@ function createHub() {
     bookingChanged(booking) { broadcast({ t: 'booking', booking }); },
     arrivalChanged(arrival) { broadcast({ t: 'arrival', arrival }); },
     personAdded(person) { broadcast({ t: 'person', person }); },
+    /* A CCG account lost staff (014): its notes and name leave every wall, and its own sockets close. */
+    personRemoved(personId, noteIds) {
+      for (const ws of sockets) if (ws.personId === personId) ws.close(4401, 'removed');
+      noteIds.forEach((id) => broadcast({ t: 'note:drop', id }));
+      broadcast({ t: 'person:drop', id: personId });
+    },
     followsChanged(follows) { broadcast(Object.assign({ t: 'follows' }, follows)); },
   };
 }
@@ -139,7 +145,10 @@ function attachLive(server, { hub, pool, companyId, trustProxy = 0, authenticate
     }
     Promise.resolve(authenticate(req)).then((session) => {
       if (!session) return refuse(socket, 401, 'Unauthorized', 'sign_in_required', 'Sign in through the CCG site to use CK Virtual Lab');
-      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.personId = session.personId || null;   // so personRemoved can find this socket
+        wss.emit('connection', ws, req);
+      });
     }, () => refuse(socket, 503, 'Service Unavailable', 'server_error', 'Internal server error'));
   });
 

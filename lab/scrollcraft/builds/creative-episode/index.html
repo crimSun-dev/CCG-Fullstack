@@ -168,6 +168,9 @@
     box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.6);
   }
   .youchip__av svg { width: 20px; height: 20px; }
+  /* The CCG profile picture, when the account has one, covers the initials (013). */
+  .youchip__av { position: relative; overflow: hidden; }
+  .youchip__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
   .youchip__av:not([data-tint="none"]) svg, .youchip__av[data-tint="none"] b { display: none; }
   .youchip__av b { font-weight: 750; }
   .youchip__av[data-tint="blue"] { --tint: var(--note-blue); --tint-ink: var(--note-ink); }
@@ -666,6 +669,12 @@
   .note__info { white-space: nowrap; }
   .note__meta { flex-wrap: wrap; row-gap: 0; }
   .note__by { font-weight: 650; margin-right: 6px; }
+  /* With a face the line is longer: name and time wrap as whole words rather than run off the paper. */
+  .note__info:has(.note__face) { display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; min-width: 0; }
+  .note__face {
+    display: inline-block; flex: none; width: 22px; height: 22px; margin-right: 6px; border-radius: 50%; object-fit: cover; vertical-align: -7px;
+    box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.75), 0 1px 3px hsl(240 30% 2% / 0.3);
+  }
   .note__tools { margin-left: auto; }
   .note__tag {
     display: inline-block; padding: 2px 8px; border-radius: var(--sc-r-pill);
@@ -936,7 +945,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       </ol>
       <div class="sign__you">
         <div class="sign__me">
-          <button type="button" class="youchip" id="you-open" aria-haspopup="dialog" aria-controls="room-sheet"><span class="youchip__av" id="you-avatar" data-tint="none" aria-hidden="true"><svg id="you-avatar-icon"><use href="#i-person"/></svg><b id="you-initials"></b></span><span class="youchip__text"><small>You</small><strong id="you-name">pick your name</strong></span></button>
+          <button type="button" class="youchip" id="you-open" aria-haspopup="dialog" aria-controls="room-sheet"><span class="youchip__av" id="you-avatar" data-tint="none" aria-hidden="true"><svg id="you-avatar-icon"><use href="#i-person"/></svg><b id="you-initials"></b><img class="youchip__photo" id="you-photo" alt="" hidden></span><span class="youchip__text"><small>You</small><strong id="you-name">pick your name</strong></span></button>
           <button type="button" class="bell" id="notices-open" aria-haspopup="dialog" aria-controls="room-sheet" aria-label="Notices"><svg aria-hidden="true"><use href="#i-bell"/></svg><span class="badge" id="notices-count" hidden>0</span></button>
         </div>
         <button type="button" class="miniplayer" id="arrivals-open" aria-haspopup="dialog" aria-controls="room-sheet"><span class="miniplayer__icon" aria-hidden="true"><svg><use href="#i-play"/></svg></span><span class="miniplayer__text"><strong id="mini-day">Office days</strong><span id="mini-state">Plan when you come in</span></span></button>
@@ -1304,6 +1313,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   }
 
   /* ------------------------------------------------------------ render -- */
+  /* The author's CCG profile picture beside their name. The name already says who; the picture is decoration,
+   * and a picture that will not load simply leaves. */
+  function face(src) {
+    var img = el('img', 'note__face');
+    img.alt = ''; img.width = 22; img.height = 22; img.loading = 'lazy'; img.decoding = 'async';
+    img.addEventListener('error', function () { img.remove(); });
+    img.src = src;
+    return img;
+  }
   function buildNote(n) {
     var art = el('article', 'note');
     art.tabIndex = -1;
@@ -1318,6 +1336,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
     var meta = el('footer', 'note__meta');
     var info = el('span', 'note__info');
+    if (n.authorAvatar) info.appendChild(face(n.authorAvatar));
     if (n.authorName) info.appendChild(el('span', 'note__by', n.authorName));
     if (isSample(n)) {
       info.appendChild(el('span', 'note__tag', 'Sample'));
@@ -2708,6 +2727,18 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     return ((w[0] || '?').charAt(0) + (w.length > 1 ? w[w.length - 1].charAt(0) : '')).toUpperCase();
   }
   function hashName(name) { var h = 0, t = String(name); for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 9973; return h; }
+  /* Shown only once it has loaded, so a broken picture never covers the initials. */
+  function paintPhoto(src) {
+    var img = $('you-photo');
+    src = src || '';
+    if (img.dataset.src === src) return;
+    img.dataset.src = src;
+    img.hidden = true;
+    if (!src) return;
+    img.onload = function () { img.hidden = false; };
+    img.onerror = function () { img.hidden = true; };
+    img.src = src;
+  }
   function paintSign() {
     var m = rooms.blackBoxInUse();
     $('pill-black-box').dataset.state = m ? 'in-use' : 'idle';
@@ -2722,6 +2753,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     $('you-open').setAttribute('aria-label', me ? 'You: ' + me.displayName + '. Change name' : 'You: pick your name');
     $('you-initials').textContent = me ? initials(me.displayName) : '';
     $('you-avatar').dataset.tint = me ? TINTS[hashName(me.displayName) % TINTS.length] : 'none';
+    paintPhoto(me && me.avatarUrl);
     var n = rooms.notices().length;
     $('notices-count').textContent = String(n);
     $('notices-count').hidden = n === 0;

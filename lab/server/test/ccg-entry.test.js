@@ -22,6 +22,13 @@ test('verifyAssertion: the CCG token checks out, and every tampering fails', () 
     { exp: Math.floor(Date.now() / 1000) - 60 }, { exp: Math.floor(Date.now() / 1000) + 3600 }]) {
     assert.equal(verifyAssertion(mint(bad), LAB_SECRET), null, JSON.stringify(bad));
   }
+  // The profile picture is optional, but when present it must be a plain http(s) URL (013).
+  assert.equal(verifyAssertion(mint({ avatar: 'https://ccg.test/avatars/x?v=1' }), LAB_SECRET).avatar, 'https://ccg.test/avatars/x?v=1');
+  assert.equal(verifyAssertion(mint({ avatar: null }), LAB_SECRET).name, 'Draven Chen');
+  for (const avatar of ['javascript:alert(1)', 'data:image/png;base64,AAAA', '/avatars/x', 'https://a.test/" onerror="x', 7,
+    'https://a.test/' + 'x'.repeat(512)]) {
+    assert.equal(verifyAssertion(mint({ avatar }), LAB_SECRET), null, String(avatar).slice(0, 40));
+  }
   const token = mint();
   const claims = JSON.parse(Buffer.from(token.split('.')[0], 'base64url'));
   const forged = Buffer.from(JSON.stringify(Object.assign(claims, { role: 'ADMIN' }))).toString('base64url');
@@ -132,6 +139,28 @@ test('/v1/ccg/enter', { skip: SKIP_DB }, async (t) => {
     const page = await request(app).get('/').set('Cookie', cookie).expect(200);
     assert.match(page.text, /<script src="ce-store.js">/);
     await request(app).get('/ce-config.js').set('Cookie', cookie).expect(200);
+  });
+
+  await t.test('the CCG profile picture follows every entry onto the name and its notes', async () => {
+    const PIC = 'https://ccg.test/avatars/' + SUB + '?v=1';
+    const res = await enter(mint({ avatar: PIC })).expect(200);
+    assert.equal(res.body.person.avatarUrl, PIC);
+    const cookie = cookieOf(res);
+    const id = crypto.randomUUID();
+    await request(app).post('/v1/notes').set('Cookie', cookie).set('Content-Type', 'application/json')
+      .send({ id, body: 'With a face', color: null }).expect(201);
+    const listed = (await request(app).get('/v1/notes').set('Cookie', cookie).expect(200)).body.notes.find((n) => n.id === id);
+    assert.equal(listed.authorAvatar, PIC);
+    const people = (await request(app).get('/v1/hub/people').set('Cookie', cookie).expect(200)).body;
+    assert.equal((people.people || people).find((p) => p.id === res.body.person.id).avatarUrl, PIC);
+
+    // A new picture is a new URL; entering without one clears it, here and on the notes.
+    const PIC2 = 'https://ccg.test/avatars/' + SUB + '?v=2';
+    assert.equal((await enter(mint({ avatar: PIC2 })).expect(200)).body.person.avatarUrl, PIC2);
+    const bare = await enter(mint()).expect(200);
+    assert.equal(bare.body.person.avatarUrl, null);
+    const after = (await request(app).get('/v1/notes').set('Cookie', cookieOf(bare)).expect(200)).body.notes.find((n) => n.id === id);
+    assert.equal(after.authorAvatar, null);
   });
 
   await t.test('another origin cannot post a token', async () => {
