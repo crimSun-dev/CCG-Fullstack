@@ -466,23 +466,64 @@
   .pl__welcome { display: grid; justify-items: center; gap: 2px; padding: 6px 0 2px; }
   .pl__welcome img { width: min(78%, 17rem); height: auto; }
   .pl__welcome .pl__welcome-tiger { width: min(46%, 10rem); margin-top: -10px; filter: drop-shadow(0 0 10px rgb(255 229 0 / 0.7)); }
-  /* Who's in, as the player's playlist: opened by the people button. */
-  .pl-list { display: grid; gap: 6px; padding: 16px 18px 10px; border-radius: 22px; background: var(--player); color: #FFFFFF;
+  /* Who's in, as the player's playlist: opened by the people button. Laid out like a music app's
+   * playlist: a cover and title on top, then numbered tracks with a square cover, the name over its
+   * status line, and Follow at the end. Whoever has arrived is "playing": bars for a number, name lit. */
+  .pl-list { display: grid; gap: 6px; padding: 18px 14px 12px; border-radius: 22px; color: #FFFFFF;
+    background: linear-gradient(180deg, #1B2C7A 0, var(--player) 11rem);
     box-shadow: 0 0 0 2px var(--player-led), 0 0 12px 1px rgb(0 150 252 / 0.35); }
   .pl-list[hidden] { display: none; }
-  .pl-list h3 { margin: 0 0 4px; color: #FFFFFF; }
-  .pl-list .slot { border-color: rgb(255 255 255 / 0.14); grid-template-columns: 7.5rem minmax(0, 1fr) auto; }
-  .pl-list .slot__time { display: flex; align-items: center; gap: 8px; color: #FFFFFF; }
-  .pl-list .slot__time::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--dot, #FFFFFF); }
+  .pl-list__head { display: flex; align-items: flex-end; gap: 14px; padding: 0 4px 10px; }
+  .pl-list__cover { flex: none; width: 76px; height: 76px; border-radius: 6px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--player-led), #6CC4FF 55%, var(--note-blue)); color: #FFFFFF;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.45); }
+  .pl-list__cover svg { width: 38px; height: 38px; }
+  .pl-list__info { min-width: 0; display: grid; gap: 2px; }
+  .pl-list__info small { color: var(--player-soft); font-size: var(--sc-t-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .pl-list h3 { margin: 0; color: #FFFFFF; font-size: clamp(1.25rem, 3.4vw, 1.75rem); line-height: 1.15; overflow-wrap: anywhere; }
+  .pl-list__meta { margin: 0; color: var(--player-soft); font-size: var(--sc-t-xs); font-weight: 600; }
+  .pl-list__cols { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); gap: 12px; margin: 0; padding: 0 10px 6px;
+    border-bottom: 1px solid rgb(255 255 255 / 0.14); color: var(--player-soft); font-size: var(--sc-t-xs); font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; }
+  .pl-list__cols span:first-child { text-align: center; }
+  .pl-list__cols[hidden] { display: none; }
+  .pl-list .slots { gap: 2px; padding-top: 4px; }
+  .pl-list .slot { grid-template-columns: 1.75rem 40px minmax(0, 1fr) auto; gap: 12px; padding: 6px 10px; border: 0; border-radius: 6px; }
+  .pl-list .slot:last-child { border: 0; }
+  .pl-list .slot:hover, .pl-list .slot:focus-within { background: rgb(255 255 255 / 0.08); }
+  .track__n { color: var(--player-soft); text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .track__bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .track__bars i { width: 3px; height: 100%; background: #6CC4FF; transform-origin: bottom; animation: trackBar 0.9s ease-in-out infinite alternate; }
+  .track__bars i:nth-child(2) { animation-delay: -0.3s; }
+  .track__bars i:nth-child(3) { animation-delay: -0.6s; }
+  @keyframes trackBar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+  @media (prefers-reduced-motion: reduce) { .track__bars i { animation: none; } .track__bars i:nth-child(2) { transform: scaleY(0.6); } }
+  .track__art { position: relative; width: 40px; height: 40px; border-radius: 4px; overflow: hidden; display: grid; place-items: center;
+    background: var(--tint, var(--note-blue)); color: var(--note-ink); font-size: var(--sc-t-sm); font-weight: 800; }
+  .track__art[data-tint="pink"] { --tint: var(--note-pink); }
+  .track__art[data-tint="green"] { --tint: var(--note-green); }
+  .track__art[data-tint="yellow"] { --tint: var(--note-yellow); }
+  .track__art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .pl-list .slot__what { color: #FFFFFF; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-list .slot[data-status="arrived"] .slot__what { color: #6CC4FF; }
+  .pl-list .slot__what small { display: flex; align-items: center; gap: 6px; color: var(--player-soft); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+  .pl-list .slot__what small > span:not(.slot__time) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-list .slot__time { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--player-soft); font-weight: 600; }
+  .pl-list .slot__time::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dot, #FFFFFF); }
   .pl-list .slot[data-status="coming"] { --dot: var(--note-green); }
   .pl-list .slot[data-status="not"] { --dot: var(--note-pink); }
   .pl-list .slot[data-status="way"] { --dot: var(--note-yellow); }
   .pl-list .slot[data-status="arrived"] { --dot: var(--note-blue); }
-  .pl-list .slot__what small { color: var(--player-soft); }
-  .pl-list .slot .btn--ghost { background: transparent; color: #FFFFFF; border-color: rgb(255 255 255 / 0.55); }
+  .pl-list .slot .btn--ghost { min-height: 32px; padding: 0 14px; border-radius: var(--sc-r-pill); background: transparent; color: #FFFFFF; border-color: rgb(255 255 255 / 0.55); font-size: var(--sc-t-xs); }
+  .pl-list .slot .btn--ghost:hover { border-color: #FFFFFF; transform: scale(1.04); }
   .pl-list .slot .btn--ghost[aria-pressed="true"] { background: #FFFFFF; color: var(--player); border-color: #FFFFFF; }
-  .pl-list .slots__empty { color: var(--player-soft); padding: 4px 0 8px; }
+  .pl-list .slots__empty { color: var(--player-soft); padding: 8px 10px; }
   .pl-list :focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+  @media (max-width: 480px) {
+    .pl-list .slot { grid-template-columns: 1.25rem 40px minmax(0, 1fr) auto; gap: 10px; padding: 6px; }
+    .pl-list__cols { grid-template-columns: 1.25rem minmax(0, 1fr); gap: 10px; padding: 0 6px 6px; }
+    .pl-list__cover { width: 60px; height: 60px; }
+  }
   /* Wide screens: the player stands against the navy wall with 홍삼볼 painted on it. */
   .pl-stage { display: grid; gap: 16px; }
   .pl-wall { display: none; }
@@ -1200,8 +1241,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         </div>
         </div>
         <div class="pl-list" id="pl-list" hidden>
-          <h3 id="arr-title" tabindex="-1"></h3>
-          <ul class="slots" id="arr-list" aria-labelledby="arr-title"></ul>
+          <div class="pl-list__head">
+            <span class="pl-list__cover" aria-hidden="true"><svg><use href="#i-people"/></svg></span>
+            <div class="pl-list__info"><small>Office day</small><h3 id="arr-title" tabindex="-1"></h3><p class="pl-list__meta" id="arr-meta"></p></div>
+          </div>
+          <p class="pl-list__cols" id="arr-cols" aria-hidden="true"><span>#</span><span>Name</span></p>
+          <ol class="slots" id="arr-list" aria-labelledby="arr-title"></ol>
           <p class="slots__empty" id="arr-empty">No one has said yet for this day.</p>
         </div>
       </section>
@@ -2684,14 +2729,25 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     $('sheet-now').dataset.state = 'idle';
     var listEl = $('arr-list');
     listEl.textContent = '';
-    plans.forEach(function (a) {
+    plans.forEach(function (a, i) {
       var li = el('li', 'slot');
       var s = planStatus(a);
       li.dataset.status = s;
-      li.appendChild(el('span', 'slot__time', s === 'not' ? 'Not coming' : s === 'way' ? 'On the way' : s === 'arrived' ? 'Arrived ' + time(a.arrivedAt) : 'Coming in'));
+      var n = el('span', 'track__n');
+      n.setAttribute('aria-hidden', 'true');
+      if (s === 'arrived') {
+        var bars = el('span', 'track__bars');
+        for (var b = 0; b < 3; b++) bars.appendChild(el('i'));
+        n.appendChild(bars);
+      } else n.textContent = String(i + 1);
+      li.appendChild(n);
+      li.appendChild(trackArt(a));
       var who = el('span', 'slot__what', a.name + (me && a.personId === me.id ? ' (you)' : ''));
+      var line = el('small');
+      line.appendChild(el('span', 'slot__time', s === 'not' ? 'Not coming' : s === 'way' ? 'On the way' : s === 'arrived' ? 'Arrived ' + time(a.arrivedAt) : 'Coming in'));
       var more = [a.note, a.coming && a.arriveAt ? (s === 'way' ? 'ETA ' : 'by ') + a.arriveAt : ''].filter(Boolean).join(' · ');
-      if (more) who.appendChild(el('small', '', more));
+      if (more) line.appendChild(el('span', '', more));
+      who.appendChild(line);
       li.appendChild(who);
       var acts = el('span', 'slot__acts');
       if (me && a.personId !== me.id) {
@@ -2703,7 +2759,23 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       li.appendChild(acts);
       listEl.appendChild(li);
     });
+    $('arr-meta').textContent = plans.length ? (plans.length === 1 ? '1 person' : plans.length + ' people') + ' · ' + coming + ' coming' : '';
+    $('arr-cols').hidden = !plans.length;
     $('arr-empty').hidden = plans.length > 0;
+  }
+  /* A track's cover: the person's CCG picture, over their initials so a broken one shows the letters. */
+  function trackArt(a) {
+    var p = rooms.person(a.personId), art = el('span', 'track__art', initials(a.name));
+    art.setAttribute('aria-hidden', 'true');
+    art.dataset.tint = TINTS[hashName(a.name) % TINTS.length];
+    if (p && p.avatarUrl) {
+      var img = el('img');
+      img.alt = '';
+      img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); };
+      img.src = p.avatarUrl;
+      art.appendChild(img);
+    }
+    return art;
   }
   var mainRun = null;
   var plListOpen = false;

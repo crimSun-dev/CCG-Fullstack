@@ -530,7 +530,7 @@ test('the office player, end to end', { skip: SKIP_DB }, async (t) => {
         assert.equal(P.$('pl-list').hidden, false);
         assert.equal(P.$('pl-who').getAttribute('aria-expanded'), 'true');
         const list = P.$('arr-list').children;
-        assert.deepEqual(list.map((li) => [li.children[1]._text, li.dataset.status]),
+        assert.deepEqual(list.map((li) => [li.children[2]._text, li.dataset.status]),
           [['Dewi', 'coming'], ['Rina Wati (you)', 'coming'], ['Sari', 'not']], 'Tono plans another day and is not listed');
         assert.match(CSS, /\.pl-list \.slot__time::before \{[^}]*background: var\(--dot/, 'each line has its dot');
         P.$('pl-who').click();

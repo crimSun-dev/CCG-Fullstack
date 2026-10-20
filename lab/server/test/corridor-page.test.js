@@ -243,7 +243,7 @@ test('the corridor on the local backend', async (t) => {
     $('arr-yes').click();
     await page.settle();
     assert.equal($('arr-list').children.length, 1);
-    assert.match($('arr-list').children[0].textContent, /^Coming inDewi \(you\)from 10/);
+    assert.match($('arr-list').children[0].textContent, /^1DDewi \(you\)Coming infrom 10/);
     assert.equal(rooms.plans(day).length, 1, 'one line per name per day');
     if (isToday) {
       assert.equal($('sheet-now').textContent, '1 person coming in today.');
