@@ -65,7 +65,7 @@ test('the corridor on the local backend', async (t) => {
     const rows = $('names-list').children;
     assert.equal(rows.length, 4);
     const dewiRow = rows.find((r) => r.textContent.startsWith('Dewi'));
-    assert.deepEqual(buttons(dewiRow).map((b) => b.textContent), ['This is me', 'Follow']);
+    assert.deepEqual(buttons(dewiRow).map((b) => b.textContent), ['This is me'], 'nothing to follow: everyone hears everything');
     assert.match(rows.find((r) => r.textContent.startsWith('Rina')).textContent, /you$/);
   });
 
@@ -223,13 +223,11 @@ test('the corridor on the local backend', async (t) => {
     assert.equal($('ck-hall-lamp').classList.contains('is-on'), false);
   });
 
-  await t.test('follow a colleague; their coming in is a notice; one line per name per day', async () => {
+  await t.test("everyone's coming in is in everyone's notices, with no following; one line per name per day", async () => {
     await rooms.pick(sari.id);
-    $('you-open').click();
+    $('notices-open').click();      // Sari is up to date
     await page.settle();
-    button($('names-list').children.find((r) => r.textContent.startsWith('Dewi')), 'Follow').click();
-    await page.settle();
-    assert.ok(rooms.isFollowing(dewi.id));
+    assert.equal($('notices-count').hidden, true);
     await rooms.pick(dewi.id);
     $('arrivals-open').click();
     assert.equal($('sheet-title').textContent, 'Office days');
@@ -245,19 +243,38 @@ test('the corridor on the local backend', async (t) => {
     assert.equal($('arr-list').children.length, 1);
     assert.match($('arr-list').children[0].textContent, /^1DDewi \(you\)Coming infrom 10/);
     assert.equal(rooms.plans(day).length, 1, 'one line per name per day');
-    if (isToday) {
-      assert.equal($('sheet-now').textContent, '1 person coming in today.');
-      await rooms.pick(sari.id);
-      await page.settle();
-      assert.equal($('notices-count').textContent, '1');
-      $('notices-open').click();
-      assert.match($('notices-list').children[0].textContent, /Dewi is coming in today · from 10/);
-    } else {
-      assert.match($('sheet-now').textContent, /^1 person coming in on \w+day\.$/);
-      await rooms.pick(sari.id);
-      await page.settle();
-      assert.equal($('notices-count').hidden, true, 'a later day is no notice: notices are for today');
-    }
+    if (isToday) assert.equal($('sheet-now').textContent, '1 person coming in today.');
+    else assert.match($('sheet-now').textContent, /^1 person coming in on \w+day\.$/);
+    await rooms.pick(sari.id);
+    await page.settle();
+    assert.equal($('notices-count').textContent, '2', 'coming in, then the note: both ring the bell, whatever the day');
+    $('notices-open').click();
+    await page.settle();
+    const feed = $('activity-list').children;
+    const when = isToday ? 'today' : 'on ';
+    assert.match(feed[0].textContent, new RegExp('^Office dayDewi changed their plan: coming in ' + when + '.*· from 10'));
+    assert.match(feed[1].textContent, new RegExp('^Office dayDewi is coming in ' + when));
+    assert.ok(feed[0].className.includes('is-new'), 'unread lines say new');
+    assert.equal(feed[0].dataset.group, 'day');
+    assert.equal($('notices-count').hidden, true, 'open is read');
+  });
+
+  await t.test('post-its are small grey lines; bookings are full lines with a tag', async () => {
+    await rooms.pick(sari.id);
+    await page.CE.notes.create({ id: page.CE.uuid(), body: 'Snacks   in the\nkitchen', color: 'pink' });
+    await page.settle();
+    assert.equal($('notices-count').hidden, true, 'a post-it never rings the bell');
+    await rooms.pick(dewi.id);
+    $('notices-open').click();
+    await page.settle();
+    const feed = $('activity-list').children;
+    assert.equal(feed[0].className, 'feed__item feed__item--minor');
+    assert.match(feed[0].textContent, /^Sari stuck a post-it: “Snacks in the kitchen”\d\d:\d\d$/);
+    const booked = feed.find((li) => li.dataset.kind === 'meeting_booked' && li.textContent.includes('Pitch review'));
+    assert.match(booked.textContent, /^Black BoxRina booked “Pitch review” · Black Box · .* and invited you/);
+    assert.equal(booked.className, 'feed__item');
+    assert.match(CSS, /\.feed__item--minor \{[^}]*font-size: var\(--sc-t-xs\)/, 'small things are small');
+    assert.match(CSS, /\.feed__text \{[^}]*font-weight: 600/, 'big things are bold');
   });
 
   await t.test('the player: weekdays only, prev and next, repeat next week, and the big button says the next step', async () => {

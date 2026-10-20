@@ -13,22 +13,24 @@
  *                     note { note } | note:drop { id } | note:ack / note:conflict { seq, note } | note:gone { seq, id }
  *                     note:error { seq, id, error } | ink { id, ink, width, points } | ink:drop { id }
  *                     stroke { stroke } | erase { ids } | restore { strokes } | clear { ids } | error { error }
- *                     booking { booking } | arrival { arrival } | person { person } | follows { personId, follows }
+ *                     booking { booking } | arrival { arrival } | person { person } | activity { activity }
  *
- * HQ rooms (src/rooms.js): every wall gets the same booking, arrival, name and follow frames; each
- * page works out for itself what concerns the name it is using.
+ * HQ rooms (src/rooms.js): every wall gets the same booking, arrival and name frames; each page works out
+ * for itself what concerns the name it is using. After any write the whole recent activity (016) follows,
+ * one frame for a burst of writes.
  */
 
 const { WebSocketServer } = require('ws');
 const { originAllowed } = require('./guards');
 const { listNotes, updateNote, MAX_LIMIT } = require('./notes');
 const { listStrokes, MAX_POINTS, MAX_LIVE, INKS, MAX_WIDTH } = require('./whiteboard');
-const { roomsFor } = require('./rooms');
+const { roomsFor, activityFor } = require('./rooms');
 
 const PATH = '/v1/live';
 const MAX_MESSAGES_PER_SECOND = 100;
 const MAX_PAYLOAD = 128 * 1024;        // a resent 1000-point preview or a 1500-id clear relay fits
 const MAX_PREVIEWS_PER_SOCKET = 8;
+const ACTIVITY_DELAY_MS = 100;         // writes this close together share one activity frame
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isId(id) { return typeof id === 'string' && UUID_RE.test(id); }
@@ -40,6 +42,7 @@ function errorFrame(code, message) { return { t: 'error', error: { code, message
 function createHub() {
   const sockets = new Set();
   const previews = new Map();   // stroke id -> { id, ink, width, points, owner }
+  let activityTimer = null;
 
   function send(ws, msg) {
     if (ws.readyState !== 1) return;
@@ -113,7 +116,16 @@ function createHub() {
       noteIds.forEach((id) => broadcast({ t: 'note:drop', id }));
       broadcast({ t: 'person:drop', id: personId });
     },
-    followsChanged(follows) { broadcast(Object.assign({ t: 'follows' }, follows)); },
+    /* Something was logged (016). readActivity is set by attachLive, which has the database. */
+    activityChanged() {
+      if (activityTimer || !this.readActivity) return;
+      activityTimer = setTimeout(() => {
+        activityTimer = null;
+        this.readActivity().then((activity) => broadcast({ t: 'activity', activity }),
+          (err) => console.error('activity read failed:', err.message));
+      }, ACTIVITY_DELAY_MS);
+      if (activityTimer.unref) activityTimer.unref();
+    },
   };
 }
 
@@ -135,6 +147,7 @@ function refuse(socket, status, reason, code, message) {
 function attachLive(server, { hub, pool, companyId, trustProxy = 0, authenticate }) {
   if (typeof authenticate !== 'function') throw new Error('attachLive needs authenticate (app.locals.authenticate)');
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
+  hub.readActivity = () => activityFor(pool, companyId);
 
   server.on('upgrade', (req, socket, head) => {
     let pathname;
@@ -201,10 +214,11 @@ function attachLive(server, { hub, pool, companyId, trustProxy = 0, authenticate
         const seq = Number.isInteger(msg.seq) ? msg.seq : null;
         const patch = { body: msg.body, revision: msg.revision };
         if (msg.color !== undefined) patch.color = msg.color;
-        const out = await updateNote(pool, companyId, msg.id, patch);
+        const out = await updateNote(pool, companyId, msg.id, patch, ws.personId);
         if (out.status === 200) {
           hub.send(ws, { t: 'note:ack', seq, note: out.note });
           hub.broadcast({ t: 'note', note: out.note }, ws);
+          hub.activityChanged();
         } else if (out.status === 409) {
           hub.send(ws, { t: 'note:conflict', seq, note: out.note });
         } else if (out.status === 404) {

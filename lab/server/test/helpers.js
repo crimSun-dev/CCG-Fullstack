@@ -39,7 +39,7 @@ async function resetStrokes(pool) {
 
 async function resetRooms(pool) {
   // CASCADE: notes may name an author.
-  await pool.query('TRUNCATE meeting_invites, follows, arrivals, bookings, people CASCADE');
+  await pool.query('TRUNCATE activity, meeting_invites, arrivals, bookings, people CASCADE');
 }
 
 /* The test branch has no Data API, so auth.user_id() is a stub that reads wall.test_sub.

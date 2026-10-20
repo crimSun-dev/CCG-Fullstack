@@ -69,10 +69,16 @@ async function listNotes(pool, companyId, limit = DEFAULT_LIMIT) {
   return { notes: (hasMore ? rows.slice(1) : rows).map(toNote), hasMore };
 }
 
+/* Who is writing, for the activity log (016): a person id, or nothing behind the CCG proxy. */
+async function actAs(client, actorId) {
+  if (actorId) await client.query("SELECT set_config('wall.actor', $1, true)", [actorId]);
+}
+
 /* Validates and applies one note update that names the revision it read. Shared by PATCH and /v1/live.
+ * actorId: the session's person, so the activity says who edited it.
  * Resolves { status: 200, note } | { status: 409, note } (someone else got there first) | { status: 404 }
  * | { status: 400, message }. The row only changes when its revision still matches; then it increments. */
-async function updateNote(pool, companyId, id, input) {
+async function updateNote(pool, companyId, id, input, actorId = null) {
   if (typeof id !== 'string' || !UUID_RE.test(id)) return { status: 404 };
   const sets = [];
   const values = [id, companyId];
@@ -94,6 +100,7 @@ async function updateNote(pool, companyId, id, input) {
   values.push(revision);
 
   return inTransaction(pool, async (client) => {
+    await actAs(client, actorId);
     const { rows } = await client.query(
       'UPDATE notes SET ' + sets.join(', ') + ', revision = revision + 1, updated_at = now()' +
       ' WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL AND revision = $' + values.length +
@@ -113,6 +120,7 @@ async function updateNote(pool, companyId, id, input) {
 /* hub: the /v1/live fan-out (src/live.js). Every change that lands is told to the open walls. */
 function notesRouter({ pool, companyId, hub }) {
   const router = express.Router();
+  const actorOf = (req) => (req.labSession ? req.labSession.personId : null);
 
   router.get('/', async (req, res) => {
     let limit = DEFAULT_LIMIT;
@@ -157,7 +165,7 @@ function notesRouter({ pool, companyId, hub }) {
     );
     if (inserted.rows.length) {
       const note = toNote(inserted.rows[0]);
-      if (hub) hub.noteChanged(note);
+      if (hub) { hub.noteChanged(note); hub.activityChanged(); }
       return res.status(201).json(note);
     }
 
@@ -171,25 +179,28 @@ function notesRouter({ pool, companyId, hub }) {
   });
 
   router.patch('/:id', async (req, res) => {
-    const out = await updateNote(pool, companyId, req.params.id, req.body || {});
+    const out = await updateNote(pool, companyId, req.params.id, req.body || {}, actorOf(req));
     if (out.status === 404) return notFound(res);
     if (out.status === 400) return invalid(res, out.message);
     if (out.status === 409) {
       return res.status(409).json({ error: { code: 'revision_conflict', message: 'Someone else changed this note' }, note: out.note });
     }
-    if (hub) hub.noteChanged(out.note);
+    if (hub) { hub.noteChanged(out.note); hub.activityChanged(); }
     res.json(out.note);
   });
 
   router.delete('/:id', async (req, res) => {
     if (!UUID_RE.test(req.params.id)) return notFound(res);
-    const { rows } = await pool.query(
-      'UPDATE notes SET deleted_at = COALESCE(deleted_at, now())' +
-      ' WHERE id = $1 AND company_id = $2 RETURNING id',
-      [req.params.id, companyId]
-    );
+    const rows = await inTransaction(pool, async (client) => {
+      await actAs(client, actorOf(req));
+      return (await client.query(
+        'UPDATE notes SET deleted_at = COALESCE(deleted_at, now())' +
+        ' WHERE id = $1 AND company_id = $2 RETURNING id',
+        [req.params.id, companyId]
+      )).rows;
+    });
     if (!rows.length) return notFound(res);
-    if (hub) hub.noteRemoved(rows[0].id);
+    if (hub) { hub.noteRemoved(rows[0].id); hub.activityChanged(); }
     res.status(204).end();
   });
 
@@ -201,7 +212,7 @@ function notesRouter({ pool, companyId, hub }) {
     );
     if (!rows.length) return notFound(res);
     const note = toNote(rows[0]);
-    if (hub) hub.noteChanged(note);
+    if (hub) { hub.noteChanged(note); hub.activityChanged(); }
     res.json(note);
   });
 

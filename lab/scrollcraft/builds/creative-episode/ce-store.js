@@ -11,7 +11,8 @@
  * Note updates name the revision they read; a stale one fails with 409 and err.note holds the saved note.
  * CE.live (the 'api' backend only) is the /v1/live socket: letters and ink as they happen. It is null otherwise.
  * CE.rooms is the headquarters corridor: the hub's names list and which name this device uses, Black Box
- * meetings, CK Hall rentals, invitations, follows, notices and today's arrivals, on the same three backends.
+ * meetings, CK Hall rentals, invitations, notices, today's arrivals and the activity everyone sees (every
+ * booking, answer, office day and post-it), on the same three backends.
  * It rides CE.live's socket or Pages' poller; it opens neither. New notes carry this device's name.
  */
 (function () {
@@ -89,6 +90,8 @@
   /* The hub name this device is using (a person id), sent as `me` and as a new note's author.
      On the office server it is the lab session's person (012); only the device-only page chooses one. */
   var HUB_PERSON_KEY = 'creative-episode.hub-person.v1';
+  var SEEN_KEY = 'creative-episode.activity-seen.v1';
+  var seenMemo = {};
   function savedPerson() {
     try { return localStorage.getItem(HUB_PERSON_KEY) || null; } catch (e) { return null; }
   }
@@ -143,19 +146,27 @@
           var n = { id: note.id, body: note.body, color: note.color, authorId: author, authorName: localName(author),
             createdAt: new Date().toISOString() };
           arr.push(n);
+          noteActivity('note_added', n, author);
           return n;
         });
       },
       update: function (id, patch) {
         return act(function (arr) {
           var n = arr[find(arr, id)];
+          var was = n.body + '|' + n.color;
           if ('body' in patch) n.body = patch.body;
           if ('color' in patch) n.color = patch.color;
+          if (n.body + '|' + n.color !== was) noteActivity('note_edited', n, savedPerson());
           return n;
         });
       },
       remove: function (id) {
-        return act(function (arr) { var i = find(arr, id); trash[id] = arr[i]; arr.splice(i, 1); return null; });
+        return act(function (arr) {
+          var i = find(arr, id);
+          trash[id] = arr[i]; arr.splice(i, 1);
+          noteActivity('note_removed', trash[id], savedPerson());
+          return null;
+        });
       },
       restore: function (id) {
         return act(function (arr) {
@@ -163,6 +174,7 @@
           if (!n) throw storeError(404);
           delete trash[id];
           insertByTime(arr, n);
+          noteActivity('note_restored', n, savedPerson());
           return n;
         });
       }
@@ -362,8 +374,7 @@
         },
         trip: function (me, step) { return rpc('trip', { me: me, step: step }); },
         repeatDay: function (me, day) { return rpc('repeat_day', { me: me, day: day }); },
-        clearDay: function (me, day) { return rpc('clear_day', { me: me, day: day }); },
-        follow: function (me, id, on) { return rpc('follow', { me: me, person_id: id, follow: on }); }
+        clearDay: function (me, day) { return rpc('clear_day', { me: me, day: day }); }
       },
       saveStroke: saveStroke
     };
@@ -589,7 +600,7 @@
         case 'arrival': emit('arrival', msg.arrival); return;
         case 'person': emit('person', msg.person); return;
         case 'person:drop': emit('personDrop', msg.id); return;
-        case 'follows': emit('follows', msg); return;
+        case 'activity': emit('activity', msg.activity); return;
       }
     }
 
@@ -912,6 +923,42 @@
     return p ? p.displayName : null;
   }
 
+  /* The device-only page keeps the activity (016) beside its names, and logs what the database's triggers
+     log. Lines written by one action share its time, as they share a transaction's now() there. */
+  var ACTIVITY_KEEP_MS = 30 * DAY_MS;
+  var logAt = null;
+  var onLocalActivity = function () {};
+  function logInto(d, kind, actorId, more) {
+    var t = logAt || new Date().toISOString();
+    d.activity = (Array.isArray(d.activity) ? d.activity : []).filter(function (a) { return Date.parse(a.at) > Date.now() - ACTIVITY_KEEP_MS; });
+    var e = { id: uuid(), at: t, kind: kind, actorId: actorId || null, subjectId: null, bookingId: null, noteId: null, detail: {} };
+    for (var k in more) e[k] = more[k];
+    d.activity.push(e);
+  }
+  function brief(b) { return { room: b.room, title: b.title, startAt: b.startAt, endAt: b.endAt }; }
+  /* A post-it on this device: stuck, edited (one line per person per note per 10 minutes), taken down,
+     or put back (which takes the take-down line away). */
+  function noteActivity(kind, n, actorId) {
+    try {
+      var d = readJSON(HUB_KEY) || {};
+      var list = Array.isArray(d.activity) ? d.activity : [];
+      var mine = list.filter(function (a) { return a.noteId === n.id; });
+      var last = mine[mine.length - 1];
+      var detail = { body: String(n.body).slice(0, 140), color: n.color };
+      if (kind === 'note_restored') {
+        if (last && last.kind === 'note_removed') d.activity = list.filter(function (a) { return a !== last; });
+      } else if (kind === 'note_edited' && last && (last.kind === 'note_added' || last.kind === 'note_edited') &&
+                 Date.parse(last.at) > Date.now() - 10 * 60000 && (!actorId || last.actorId === actorId)) {
+        detail.edited = true;
+        last.detail = detail;
+      } else {
+        logInto(d, kind, actorId, { noteId: n.id, detail: detail });
+      }
+      localStorage.setItem(HUB_KEY, JSON.stringify(d));
+    } catch (e) { /* the note still saved; only its line is missing */ }
+    onLocalActivity();
+  }
+
   function hubPath(room) { return 'v1/hub/' + (room === 'black_box' ? 'black-box' : 'ck-hall'); }
   var serverHub = {
     people: function () { return call('GET', 'v1/hub/people').then(function (d) { return d.people; }); },
@@ -934,7 +981,6 @@
     trip: function (me, step) { return call('POST', 'v1/hub/arrivals/today/trip', { me: me, step: step }); },
     repeatDay: function (me, day) { return call('POST', 'v1/hub/arrivals/' + day + '/repeat', { me: me }); },
     clearDay: function (me, day) { return call('DELETE', 'v1/hub/arrivals/' + day, { me: me }); },
-    follow: function (me, id, on) { return call('PUT', 'v1/hub/follows/' + encodeURIComponent(id), { me: me, follow: on }); },
     /* The CCG site's signed hand-off, exchanged for that account's hub name (server/src/ccg-entry.js). */
     ccgEnter: function (token) { return call('POST', 'v1/ccg/enter', { token: token }).then(function (d) { return d.person; }); },
     /* The office server is staff only (012): the session, not the page, says who this is. */
@@ -951,13 +997,47 @@
         people: Array.isArray(d.people) ? d.people : [],
         bookings: Array.isArray(d.bookings) ? d.bookings : [],
         arrivals: Array.isArray(d.arrivals) ? d.arrivals : [],
-        follows: Array.isArray(d.follows) ? d.follows : []
+        activity: Array.isArray(d.activity) ? d.activity : []
       };
     }
     function act(fn) {
       return new Promise(function (resolve, reject) {
+        logAt = new Date().toISOString();
         try { var d = read(); var out = fn(d); localStorage.setItem(HUB_KEY, JSON.stringify(d)); resolve(out); } catch (e) { reject(e); }
+        logAt = null;
       });
+    }
+    /* The last 7 days, newest first, at most 150 lines, with names read now (hq_activity). */
+    function activityView(d) {
+      var from = Date.now() - 7 * DAY_MS;
+      return d.activity.filter(function (a) { return Date.parse(a.at) > from; }).slice(-150).reverse().map(function (a) {
+        var out = {}; for (var k in a) out[k] = a[k];
+        var by = person(d, a.actorId), who = person(d, a.subjectId);
+        out.actorName = by ? by.displayName : null;
+        out.subjectName = who ? who.displayName : null;
+        return out;
+      });
+    }
+    /* An office-day line changed from was (null: there was none) to a (null: taken back), logged as the trigger does. */
+    function logArrival(d, was, a) {
+      if (!a) { logInto(d, 'plan_cleared', was.personId, { detail: { day: was.day } }); return; }
+      var det = function (changed) {
+        var x = { day: a.day, arriveAt: a.arriveAt || null, note: a.note || null };
+        if (changed) x.changed = true;
+        return { detail: x };
+      };
+      var started = !!a.leftAt && (!was || !was.leftAt);
+      if ((!was || was.coming !== a.coming) && !started) logInto(d, a.coming ? 'coming_in' : 'not_coming', a.personId, det());
+      else if (was && ((was.arriveAt || null) !== (a.arriveAt || null) || (was.note || null) !== (a.note || null))) {
+        logInto(d, a.coming ? 'coming_in' : 'not_coming', a.personId, det(true));
+      }
+      if (started) logInto(d, 'on_the_way', a.personId, det());
+      if (a.arrivedAt && (!was || !was.arrivedAt)) logInto(d, 'arrived', a.personId, det());
+      if (was && a.coming && was.leftAt && !a.leftAt) logInto(d, 'trip_reset', a.personId, det());
+    }
+    function prior(d, personId, day) {
+      var a = d.arrivals.filter(function (x) { return x.personId === personId && x.day === day; })[0];
+      return a ? JSON.parse(JSON.stringify(a)) : null;
     }
     function person(d, id) { return d.people.filter(function (p) { return p.id === id; })[0] || null; }
     function need(d, me) {
@@ -997,7 +1077,7 @@
     }
     function over(b) { return !LISTED[b.status] || Date.parse(b.endAt) <= Date.now(); }
     /* The database's seat rules (009): chairs 2-8, one person per chair, the host plus 7 at most. */
-    function addInvites(d, b, ids, seats) {
+    function addInvites(d, b, ids, seats, by) {
       if (!ids || !ids.length) return;
       if (ids.length > 50 || ids.some(function (id) { return !person(d, id); })) throw storeError(400, 'validation_failed');
       if (seats) {
@@ -1012,9 +1092,14 @@
         var seat = seats ? seats[k] : null;
         if (seat != null && b.invites.some(function (i) { return i.seat === seat && i.personId !== id; })) throw storeError(409, 'seat_taken');
         var had = b.invites.filter(function (i) { return i.personId === id; })[0];
-        if (!had) { b.invites.push({ personId: id, status: 'invited', seat: seat == null ? null : seat }); return; }
+        var asked = { subjectId: id, bookingId: b.id, detail: brief(b) };
+        if (!had) {
+          b.invites.push({ personId: id, status: 'invited', seat: seat == null ? null : seat });
+          logInto(d, 'invited', by, asked);
+          return;
+        }
         if (seat != null && (had.status === 'declined' || had.seat == null)) {
-          if (had.status === 'declined') had.status = 'invited';
+          if (had.status === 'declined') { had.status = 'invited'; logInto(d, 'invited', by, asked); }
           had.seat = seat;
         }
       });
@@ -1044,10 +1129,12 @@
     function plan(d, p, day, coming, note, arriveAt) {
       if (typeof coming !== 'boolean') throw storeError(400, 'validation_failed');
       if (arriveAt != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(arriveAt)) throw storeError(400, 'validation_failed');
+      var was = prior(d, p.id, day);
       var a = rowFor(d, p, day);
       a.coming = coming; a.note = text(note, 280, false); a.arriveAt = coming ? (arriveAt || null) : null;
       if (!coming) { a.leftAt = null; a.arrivedAt = null; }
       a.updatedAt = new Date().toISOString();
+      logArrival(d, was, a);
       return arrival(d, a);
     }
     function plansInReach(d) {
@@ -1077,8 +1164,9 @@
               (Date.parse(b.startAt) < reach || (!over(b) && b.invites && b.invites.length));
           }).sort(function (a, b) { return Date.parse(a.startAt) - Date.parse(b.startAt); });
           return { now: new Date().toISOString(), day: today(), days: REACH_DAYS,
-            people: d.people.slice().sort(byName), follows: d.follows.slice(),
-            bookings: list.map(function (b) { return json(d, b); }), arrivals: arrivalsToday(d), plans: plansInReach(d) };
+            people: d.people.slice().sort(byName),
+            bookings: list.map(function (b) { return json(d, b); }), arrivals: arrivalsToday(d), plans: plansInReach(d),
+            activity: activityView(d) };
         });
       },
       list: function (room, day) {
@@ -1105,7 +1193,8 @@
             note: text(input.note, 600, false), status: room === 'black_box' ? 'active' : 'requested',
             createdBy: p.id, invites: [], createdAt: t, updatedAt: t };
           if (HOLDS[b.status] && clash(d, b)) throw storeError(409, 'booking_conflict');
-          addInvites(d, b, input.invite, input.seats || null);
+          logInto(d, room === 'black_box' ? 'meeting_booked' : 'hall_requested', p.id, { bookingId: b.id, detail: brief(b) });
+          addInvites(d, b, input.invite, input.seats || null, p.id);
           d.bookings.push(b);
           return json(d, b);
         });
@@ -1116,7 +1205,10 @@
           var b = find(d, id);
           if (b.room !== 'black_box') throw storeError(404, 'not_found');
           if (b.createdBy !== p.id) throw storeError(403, 'forbidden');
-          if (b.status === 'active') { b.status = 'cancelled'; b.updatedAt = new Date().toISOString(); }
+          if (b.status === 'active') {
+            b.status = 'cancelled'; b.updatedAt = new Date().toISOString();
+            logInto(d, 'booking_cancelled', p.id, { subjectId: b.createdBy, bookingId: b.id, detail: brief(b) });
+          }
           return json(d, b);
         });
       },
@@ -1136,6 +1228,8 @@
             throw storeError(409, 'booking_conflict');
           }
           b.status = target; b.updatedAt = new Date().toISOString();
+          logInto(d, { cancelled: 'booking_cancelled', confirmed: 'hall_confirmed', declined: 'hall_declined' }[target], p.id,
+            { subjectId: b.createdBy, bookingId: b.id, detail: brief(b) });
           return json(d, b);
         });
       },
@@ -1147,7 +1241,7 @@
           if (b.createdBy !== p.id && !invited) throw storeError(403, 'forbidden');
           if (over(b)) throw storeError(409, 'invalid_state');
           if (!people || !people.length) throw storeError(400, 'validation_failed');
-          addInvites(d, b, people, seats || null);
+          addInvites(d, b, people, seats || null, p.id);
           b.updatedAt = new Date().toISOString();
           return json(d, b);
         });
@@ -1162,6 +1256,7 @@
           if (over(b)) throw storeError(409, 'invalid_state');
           if (response === 'accepted' && mine.status === 'declined' && b.room === 'black_box' &&
               b.invites.filter(function (i) { return i.status !== 'declined'; }).length >= 7) throw storeError(409, 'table_full');
+          if (mine.status !== response) logInto(d, response, p.id, { subjectId: p.id, bookingId: b.id, detail: brief(b) });
           mine.status = response;
           if (response === 'declined') mine.seat = null;
           b.updatedAt = new Date().toISOString();
@@ -1173,10 +1268,12 @@
           var p = need(d, me);
           if (typeof coming !== 'boolean') throw storeError(400, 'validation_failed');
           var n = text(note, 280, false), day = today();
+          var was = prior(d, p.id, day);
           var a = d.arrivals.filter(function (x) { return x.personId === p.id && x.day === day; })[0];
           if (!a) { a = { id: uuid(), personId: p.id, day: day }; d.arrivals.push(a); }
           a.coming = coming; a.note = n; a.updatedAt = new Date().toISOString();
           if (!coming) { a.arriveAt = null; a.leftAt = null; a.arrivedAt = null; }
+          logArrival(d, was, a);
           return arrival(d, a);
         });
       },
@@ -1190,7 +1287,7 @@
           var wd = new Date(dayStart(day) + JAKARTA_MS).getUTCDay();
           if (wd === 0 || wd === 6) throw storeError(400, 'validation_failed');
           var a = d.arrivals.filter(function (x) { return x.personId === p.id && x.day === day; })[0];
-          var t = new Date().toISOString();
+          var t = new Date().toISOString(), was = prior(d, p.id, day);
           if (step === 'on_the_way') {
             a = rowFor(d, p, day); a.coming = true; a.leftAt = a.leftAt || t; a.arrivedAt = null;
           } else if (step === 'arrived') {
@@ -1201,6 +1298,7 @@
             a.leftAt = null; a.arrivedAt = null;
           }
           a.updatedAt = t;
+          logArrival(d, was, a);
           return arrival(d, a);
         });
       },
@@ -1220,18 +1318,9 @@
           if (a.leftAt) throw storeError(409, 'invalid_state');
           var out = arrival(d, a);
           d.arrivals = d.arrivals.filter(function (x) { return x !== a; });
+          logArrival(d, a, null);
           out.cleared = true;
           return out;
-        });
-      },
-      follow: function (me, id, on) {
-        return act(function (d) {
-          var p = need(d, me);
-          if (!person(d, id)) throw storeError(404, 'not_found');
-          if (id === p.id) throw storeError(400, 'validation_failed');
-          d.follows = d.follows.filter(function (f) { return !(f.personId === p.id && f.followsId === id); });
-          if (on !== false) d.follows.push({ personId: p.id, followsId: id });
-          return { personId: p.id, follows: d.follows.filter(function (f) { return f.personId === p.id; }).map(function (f) { return f.followsId; }) };
         });
       }
     };
@@ -1240,7 +1329,7 @@
   /* One state for the corridor, fed by whichever backend the page has. Answers to writes land at once;
      the socket (office) or the poll (Pages) brings everyone else's. on('change', fn) hears both. */
   function rooms(adapter, live) {
-    var people = {}, follows = [], bookings = {}, arrivals = {}, offset = 0, ready = false;
+    var people = {}, bookings = {}, arrivals = {}, activity = [], offset = 0, ready = false;
     var handlers = [], lastSnap = '', lastNow = '', boundary = 0;
 
     function meId() { return savedPerson(); }
@@ -1306,7 +1395,7 @@
       if (!snap) return;
       var t = Date.parse(snap.now);
       if (!isNaN(t)) offset = t - Date.now();
-      var key = JSON.stringify([snap.people, snap.follows, snap.bookings, snap.arrivals, snap.plans]);
+      var key = JSON.stringify([snap.people, snap.bookings, snap.arrivals, snap.plans, snap.activity]);
       if (key === lastSnap && ready) {
         if (nowKey() !== lastNow) emit();   // Pages: the clock crossed a span edge between polls
         return;
@@ -1315,7 +1404,7 @@
       ready = true;
       people = {};
       (snap.people || []).forEach(function (p) { people[p.id] = p; });
-      follows = (snap.follows || []).slice();
+      activity = Array.isArray(snap.activity) ? snap.activity.slice() : [];
       var from = dayStart(snap.day || today());
       merge(snap.bookings || [], null, from, from + (snap.days || REACH_DAYS) * DAY_MS);
       /* One map for every office-day line: today's arrivals and, from 009, the plans of the reach. */
@@ -1326,11 +1415,11 @@
     function refresh() {
       return adapter.snapshot().then(snapshot, function () { /* the socket or the next poll catches up */ });
     }
-    function wrote(b) { lastSnap = ''; put(b); emit(); return b; }
-    function setFollows(out) {
-      follows = follows.filter(function (f) { return f.personId !== out.personId; })
-        .concat(out.follows.map(function (id) { return { personId: out.personId, followsId: id }; }));
-    }
+    /* After a write: on this device only, the activity it logged is read back at once. The office hears it
+       on the socket, Pages on its next poll. */
+    function logged() { if (BACKEND === 'local') refresh(); }
+    function wrote(b) { lastSnap = ''; put(b); emit(); logged(); return b; }
+    function wroteArrival(a) { putArrival(a); lastSnap = ''; emit(); logged(); return a; }
     function sorted(list) {
       return list.sort(function (a, b) { return Date.parse(a.startAt) - Date.parse(b.startAt) || (a.id < b.id ? -1 : 1); });
     }
@@ -1345,9 +1434,39 @@
       return (b.invites || []).filter(function (i) { return i.personId === id; })[0] || null;
     }
     function putArrival(a) { if (a.cleared) delete arrivals[a.id]; else arrivals[a.id] = a; }
-    function following() {
-      var id = meId();
-      return follows.filter(function (f) { return f.personId === id; }).map(function (f) { return f.followsId; });
+    /* The small things, shown quietly: post-its and an undone trip. Everything else is a booking, an answer
+       or an office day. */
+    var MINOR = { note_added: 1, note_edited: 1, note_removed: 1, trip_reset: 1 };
+    var OPENS = { meeting_booked: 1, hall_requested: 1 };
+    /* One line per action: the invitations one write sent (they share its time) ride on one line, as names,
+       and on the booking's own line when the booking sent them. */
+    function feed() {
+      var id = meId(), out = [], lines = {};
+      function toLine(a) {
+        return { key: 'activity:' + a.id, kind: a.kind, at: a.at, actorId: a.actorId, actorName: a.actorName,
+          subjectId: a.subjectId, subjectName: a.subjectName, bookingId: a.bookingId, noteId: a.noteId,
+          detail: a.detail || {}, mine: !!id && a.actorId === id, minor: !!MINOR[a.kind], invitees: [] };
+      }
+      activity.forEach(function (a) {
+        var action = a.at + '|' + a.actorId + '|' + a.bookingId;
+        var had = a.bookingId ? lines[action] : null;
+        if (had && a.kind === 'invited') { had.invitees.push({ personId: a.subjectId, name: a.subjectName }); return; }
+        /* Newest first, a booking's invitations come before it: the booking takes their line over. */
+        if (had && OPENS[a.kind] && had.kind === 'invited') {
+          var over = toLine(a);
+          over.invitees = had.invitees;
+          out[out.indexOf(had)] = lines[action] = over;
+          return;
+        }
+        var line = toLine(a);
+        if (a.kind === 'invited') line.invitees.push({ personId: a.subjectId, name: a.subjectName });
+        if (a.bookingId && (a.kind === 'invited' || OPENS[a.kind])) lines[action] = line;
+        out.push(line);
+      });
+      out.forEach(function (line) {
+        line.invitees.sort(function (x, y) { return String(x.name).toLowerCase().localeCompare(String(y.name).toLowerCase()); });
+      });
+      return out;
     }
 
     if (live) {
@@ -1355,19 +1474,19 @@
       live.on('rooms', snapshot);
       live.on('booking', function (b) { put(b); lastSnap = ''; emit(); });
       live.on('arrival', function (a) { if (a.day >= today()) { putArrival(a); lastSnap = ''; emit(); } });
+      live.on('activity', function (list) { if (Array.isArray(list)) { activity = list; lastSnap = ''; emit(); } });
       live.on('person', function (p) { people[p.id] = p; lastSnap = ''; emit(); });
       /* A name removed with its CCG account (014): gone from the list at once; the snapshot then brings the
          bookings, invitations and office days without it. Removed yourself, you are back at sign-in. */
       live.on('personDrop', function (id) {
         if (signedIn && id === meId()) { savePerson(null); toSignIn(); return; }
         delete people[id];
-        follows = follows.filter(function (f) { return f.personId !== id && f.followsId !== id; });
         lastSnap = ''; emit();
         refresh();
       });
       live.on('removed', function () { if (signedIn) { savePerson(null); toSignIn(); } });
-      live.on('follows', function (out) { setFollows(out); lastSnap = ''; emit(); });
     }
+    if (BACKEND === 'local') onLocalActivity = refresh;
     if (BACKEND !== 'neon') refresh();
 
     return {
@@ -1406,11 +1525,6 @@
       /* Add someone else's name to the list (or find the one that reads the same), without using it here. */
       addPerson: function (name) {
         return adapter.addPerson(name).then(function (p) { people[p.id] = p; lastSnap = ''; emit(); return p; });
-      },
-      following: following,
-      isFollowing: function (id) { return following().indexOf(id) >= 0; },
-      follow: function (id, on) {
-        return adapter.follow(meId(), id, on !== false).then(function (out) { setFollows(out); lastSnap = ''; emit(); return out; });
       },
 
       /* ----- time: the server's clock as this page best knows it */
@@ -1473,8 +1587,27 @@
         return wd !== 0 && wd !== 6;
       },
 
-      /* ----- notices for the name this device is using: invitations still to answer, and today's
-         arrivals of the names it follows. Each has a stable key, so a page can tell what is new. */
+      /* ----- what everyone in the lab did, newest first (016): every booking, cancellation and hall
+         decision, invitation and answer, office day and trip in, and post-it. A line has a stable key,
+         `mine` when this device's name did it, `minor` for the small things, and the names it invited. */
+      activity: feed,
+      /* How far the name this device is using has read the activity: the newest line's time when its
+         notices were last open here. null for a name that has never been used on this device. */
+      seenAt: function () {
+        var id = meId();
+        if (!id) return null;
+        try { var v = localStorage.getItem(SEEN_KEY + ':' + id); if (v) return v; } catch (e) { /* this tab only */ }
+        return seenMemo[id] || null;
+      },
+      markSeen: function (at) {
+        var id = meId(), was = this.seenAt();
+        if (!id || !at || (was && Date.parse(was) >= Date.parse(at))) return;
+        seenMemo[id] = at;
+        try { localStorage.setItem(SEEN_KEY + ':' + id, at); } catch (e) { /* this tab only */ }
+      },
+
+      /* ----- notices for the name this device is using: invitations still to answer. Each has a stable
+         key, so a page can tell what is new. */
       notices: function () {
         var id = meId();
         if (!id) return [];
@@ -1484,12 +1617,6 @@
           if (mine && mine.status === 'invited' && LISTED[b.status] && Date.parse(b.endAt) > t) {
             out.push({ key: 'invite:' + b.id, kind: 'invite', booking: b });
           }
-        });
-        var watched = following();
-        Object.keys(arrivals).map(function (k) { return arrivals[k]; }).filter(function (a) {
-          return a.coming && a.day === today() && watched.indexOf(a.personId) >= 0;
-        }).sort(function (a, b) { return Date.parse(b.updatedAt) - Date.parse(a.updatedAt); }).forEach(function (a) {
-          out.push({ key: 'arrival:' + a.personId + ':' + a.day, kind: 'arrival', arrival: a });
         });
         return out;
       },
@@ -1511,24 +1638,24 @@
       invite: function (id, peopleIds, seats) { return adapter.invite(meId(), id, peopleIds, seats || null).then(wrote); },
       respond: function (id, response) { return adapter.respond(meId(), id, response).then(wrote); },
       markArrival: function (coming, note) {
-        return adapter.markArrival(meId(), coming, note || null).then(function (a) { arrivals[a.id] = a; lastSnap = ''; emit(); return a; });
+        return adapter.markArrival(meId(), coming, note || null).then(wroteArrival);
       },
       /* plan: { coming, note, arriveAt 'HH:MM' | null }. A 400 names a day outside the reach or a weekend. */
       planDay: function (day, plan) {
         return adapter.planDay(meId(), day, { coming: !!plan.coming, note: plan.note || null, arriveAt: plan.arriveAt || null })
-          .then(function (a) { arrivals[a.id] = a; lastSnap = ''; emit(); return a; });
+          .then(wroteArrival);
       },
       /* Today's trip in: 'on_the_way', 'arrived', or 'reset'. */
       trip: function (step) {
-        return adapter.trip(meId(), step).then(function (a) { arrivals[a.id] = a; lastSnap = ''; emit(); return a; });
+        return adapter.trip(meId(), step).then(wroteArrival);
       },
       /* The same plan on the same weekday next week. */
       repeatDay: function (day) {
-        return adapter.repeatDay(meId(), day).then(function (a) { arrivals[a.id] = a; lastSnap = ''; emit(); return a; });
+        return adapter.repeatDay(meId(), day).then(wroteArrival);
       },
       /* Take a day's plan back (Repeat off). */
       clearDay: function (day) {
-        return adapter.clearDay(meId(), day).then(function (a) { putArrival(a); lastSnap = ''; emit(); return a; });
+        return adapter.clearDay(meId(), day).then(wroteArrival);
       }
     };
   }

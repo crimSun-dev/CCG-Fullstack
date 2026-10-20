@@ -330,6 +330,30 @@
   .slot .btn { min-height: 36px; padding: 0 12px; font-size: var(--sc-t-sm); }
   .slots__empty { margin: 0; color: var(--note-meta); font-size: var(--sc-t-sm); }
 
+  /* Notices: invitations to answer, then everything anyone in the lab did. Bookings, hall decisions,
+     invitations and office days are full lines with a tag and a colour mark; post-its and other small
+     things sit between them, small, grey and untagged. */
+  .notices__head { margin: 16px 0 6px; font-size: var(--sc-t-sm); font-weight: 700; color: var(--note-meta); }
+  .notices__head:first-child { margin-top: 0; }
+  .feed { list-style: none; margin: 0; padding: 0; display: grid; }
+  .feed__item {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline;
+    padding: 10px 4px 10px 12px; border-top: 1px solid rgb(22 22 28 / 0.15); border-left: 4px solid var(--mark, var(--indigo));
+  }
+  .feed__item[data-group="ck_hall"] { --mark: var(--note-pink); }
+  .feed__item[data-group="day"] { --mark: var(--note-green); }
+  .feed__tag { grid-column: 1 / -1; font-size: var(--sc-t-xs); font-weight: 700; color: var(--note-meta); }
+  .feed__item.is-new .feed__tag::after { content: " · new"; color: var(--indigo); }
+  .feed__text { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+  .feed__at { color: var(--note-meta); font-size: var(--sc-t-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .feed__item--minor {
+    padding: 3px 4px 3px 16px; border-top: 0; border-left: 0;
+    color: var(--note-meta); font-size: var(--sc-t-xs);
+  }
+  .feed__item--minor .feed__text { font-weight: 400; }
+  .feed__item--minor + .feed__item:not(.feed__item--minor) { margin-top: 4px; }
+  .feed__item:not(.feed__item--minor) + .feed__item--minor { padding-top: 8px; }
+
 
   /* --------------------------------------------- Black Box: the table -- */
   /* The room's round table seen from above, 8 chairs. Chair 1, at the head, is the host. A seated
@@ -468,7 +492,7 @@
   .pl__welcome .pl__welcome-tiger { width: min(46%, 10rem); margin-top: -10px; filter: drop-shadow(0 0 10px rgb(255 229 0 / 0.7)); }
   /* Who's in, as the player's playlist: opened by the people button. Laid out like a music app's
    * playlist: a cover and title on top, then numbered tracks with a square cover, the name over its
-   * status line, and Follow at the end. Whoever has arrived is "playing": bars for a number, name lit. */
+   * status line. Whoever has arrived is "playing": bars for a number, name lit. */
   .pl-list { display: grid; gap: 6px; padding: 18px 14px 12px; border-radius: 22px; color: #FFFFFF;
     background: linear-gradient(180deg, #1B2C7A 0, var(--player) 11rem);
     box-shadow: 0 0 0 2px var(--player-led), 0 0 12px 1px rgb(0 150 252 / 0.35); }
@@ -1111,7 +1135,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           </form>
         </div>
         <h3>Everyone on the hub</h3>
-        <p class="sheet__note" id="names-hint">Pick your own name to use it here. Follow colleagues to be told when they are coming in.</p>
+        <p class="sheet__note" id="names-hint">Pick your own name to use it here.</p>
         <ul class="slots" id="names-list" aria-label="Names on the hub"></ul>
         <p class="slots__empty" id="names-empty">No names yet. Add yours above.</p>
       </section>
@@ -1198,10 +1222,13 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         </div>
       </section>
 
-      <!-- Notices: invitations to answer, and followed colleagues coming in today. Nothing leaves the page. -->
+      <!-- Notices: invitations to answer, then everything everyone in the lab did. Nothing leaves the page. -->
       <section id="notices-panel" aria-label="Notices" hidden>
-        <ul class="slots" id="notices-list" aria-label="Notices"></ul>
-        <p class="slots__empty" id="notices-empty">Nothing new. Invitations and colleagues you follow coming in show up here.</p>
+        <h3 class="notices__head" id="notices-answer-head" hidden>To answer</h3>
+        <ul class="slots" id="notices-list" aria-label="Invitations to answer"></ul>
+        <h3 class="notices__head" id="activity-head" hidden>Everyone in the lab</h3>
+        <ul class="feed" id="activity-list" aria-label="Everything everyone in the lab did"></ul>
+        <p class="slots__empty" id="notices-empty">Nothing yet. Every booking, invitation, office day and post-it in the lab shows up here.</p>
         <div class="row"><button type="button" class="btn btn--ghost" id="alerts-allow" hidden>Allow browser alerts</button></div>
       </section>
 
@@ -2315,8 +2342,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 })();
 </script>
 <script>
-/* The corridor's rooms. CE.rooms (ce-store.js) owns every name, booking, invitation, follow and arrival
-   and says when; this script paints the sign and the sheet and hands what people do to CE.rooms.
+/* The corridor's rooms. CE.rooms (ce-store.js) owns every name, booking, invitation, arrival and activity
+   line and says when; this script paints the sign and the sheet and hands what people do to CE.rooms.
    Times are the office's: Asia/Jakarta. Nothing before today is offered. */
 (function () {
   'use strict';
@@ -2356,6 +2383,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   var selected = null;        /* the booking shown in the detail card */
   var firstHour = 7;          /* the timetable's first hour, for turning a click into a time */
   var seen = null;            /* notice keys already shown; null until the first full snapshot */
+  var feedSince = null;       /* the newest activity already seen when the notices were opened: newer is "new" */
 
   function time(iso) { return clock.format(new Date(iso)); }
   function dayTitle(d) { return (d === rooms.today() ? 'Today, ' : '') + longDay.format(rooms.dayStart(d)); }
@@ -2604,7 +2632,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     rooms.planDay(d, { coming: coming, note: note, arriveAt: coming ? arrive : null }).then(function () {
       plFilled = '';
       say($('sheet-msg'), okText || (coming
-        ? (d === rooms.today() ? 'Marked: coming in today. People who follow you will see it.' : 'Marked: coming in on ' + dayName.format(rooms.dayStart(d)) + '.')
+        ? (d === rooms.today() ? 'Marked: coming in today. Everyone in the lab will see it.' : 'Marked: coming in on ' + dayName.format(rooms.dayStart(d)) + '.')
         : (d === rooms.today() ? 'Marked: not coming today.' : 'Marked: not coming on ' + dayName.format(rooms.dayStart(d)) + '.')), 'ok');
     }, function (err) {
       say($('sheet-msg'), err && err.code === 'validation_failed' ? 'Plans are for weekdays, today through two weeks ahead.' : refusal(err), 'error');
@@ -2749,14 +2777,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       if (more) line.appendChild(el('span', '', more));
       who.appendChild(line);
       li.appendChild(who);
-      var acts = el('span', 'slot__acts');
-      if (me && a.personId !== me.id) {
-        var on = rooms.isFollowing(a.personId);
-        var f = action(on ? 'Following' : 'Follow', function () { return rooms.follow(a.personId, !on); }, $('sheet-msg'));
-        f.setAttribute('aria-pressed', String(on));
-        acts.appendChild(f);
-      }
-      li.appendChild(acts);
+      li.appendChild(el('span', 'slot__acts'));
       listEl.appendChild(li);
     });
     $('arr-meta').textContent = plans.length ? (plans.length === 1 ? '1 person' : plans.length + ' people') + ' · ' + coming + ' coming' : '';
@@ -2826,11 +2847,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     $('you-initials').textContent = me ? initials(me.displayName) : '';
     $('you-avatar').dataset.tint = me ? TINTS[hashName(me.displayName) % TINTS.length] : 'none';
     paintPhoto(me && me.avatarUrl);
-    var n = rooms.notices().length;
-    $('notices-count').textContent = String(n);
-    $('notices-count').hidden = n === 0;
-    $('notices-open').dataset.new = String(n > 0);
-    $('notices-open').setAttribute('aria-label', n ? 'Notices, ' + n + ' new' : 'Notices, nothing new');
+    paintBell();
     $('composer-who-name').textContent = me ? me.displayName : 'nobody yet';
     $('composer-who').textContent = me ? 'Change' : 'Pick your name';
     paintMini();
@@ -2846,8 +2863,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     $('names-forget').hidden = !me;
     $('names-forget').textContent = fixed ? 'Sign out' : 'Not me';
     $('name-form').hidden = fixed;
-    $('names-hint').textContent = fixed ? 'Follow colleagues to be told when they are coming in.'
-      : 'Pick your own name to use it here. Follow colleagues to be told when they are coming in.';
+    $('names-hint').textContent = fixed ? 'Everyone here sees what everyone does, in Notices.'
+      : 'Pick your own name to use it here.';
     $('name-role-field').hidden = CE.backend !== 'local';
     var list = $('names-list');
     list.textContent = '';
@@ -2863,12 +2880,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         acts.appendChild(action('This is me', function () {
           return rooms.pick(p.id).then(function () { say($('sheet-msg'), 'You are ' + p.displayName + ' on this device.', 'ok'); });
         }, $('sheet-msg')));
-      }
-      if (me && me.id !== p.id) {
-        var on = rooms.isFollowing(p.id);
-        var f = action(on ? 'Following' : 'Follow', function () { return rooms.follow(p.id, !on); }, $('sheet-msg'));
-        f.setAttribute('aria-pressed', String(on));
-        acts.appendChild(f);
       }
       li.appendChild(acts);
       list.appendChild(li);
@@ -3088,8 +3099,89 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       return (b.byName || 'Someone') + ' invited you to ' + (b.title ? '“' + b.title + '”' : 'a booking') + ' · ' + ROOM[b.room] +
         ' · ' + shortDay.format(new Date(b.startAt)) + ', ' + time(b.startAt) + '–' + time(b.endAt);
     }
-    return n.arrival.name + ' is coming in today' + (n.arrival.note ? ' · ' + n.arrival.note : '');
+    return '';
   }
+
+  /* ---------------------------------------------------------- activity -- */
+  /* One line of what someone did, in words. "You" when it was this device's name. */
+  function activityText(line) {
+    var d = line.detail, you = line.mine, a = you ? 'You' : line.actorName || 'Someone';
+    var is = you ? ' are' : ' is', their = you ? 'your' : 'their';
+    var booking = (d.title ? '“' + d.title + '”' : 'a booking') + ' · ' + (ROOM[d.room] || 'a room') +
+      (d.startAt ? ' · ' + shortDay.format(new Date(d.startAt)) + ', ' + time(d.startAt) + '–' + time(d.endAt) : '');
+    var asked = line.invitees.length ? ' and invited ' + nameList(line.invitees) : '';
+    var post = d.body ? ': “' + clip(d.body) + '”' : '';
+    switch (line.kind) {
+      case 'meeting_booked': return a + ' booked ' + booking + asked;
+      case 'hall_requested': return a + ' asked for ' + booking + asked;
+      case 'hall_confirmed': return a + ' confirmed ' + booking;
+      case 'hall_declined': return a + ' turned down ' + booking;
+      case 'booking_cancelled': return a + ' cancelled ' + booking;
+      case 'invited': return a + ' invited ' + nameList(line.invitees) + ' to ' + booking;
+      case 'accepted': return a + is + ' joining ' + booking;
+      case 'declined': return a + ' can’t make ' + booking;
+      case 'coming_in':
+        return a + (d.changed ? ' changed ' + their + ' plan: coming in ' : is + ' coming in ') + onDay(d.day) +
+          (d.arriveAt ? ' by ' + d.arriveAt : '') + (d.note ? ' · ' + d.note : '');
+      case 'not_coming': return a + (d.changed ? ' changed ' + their + ' plan: not coming in ' : is + ' not coming in ') + onDay(d.day) +
+        (d.note ? ' · ' + d.note : '');
+      case 'on_the_way': return a + ' set off for the office' + (d.arriveAt ? ' · ETA ' + d.arriveAt : '');
+      case 'arrived': return a + ' arrived at the office';
+      case 'plan_cleared': return a + ' took back ' + their + ' plan for ' + shortDay.format(rooms.dayStart(d.day));
+      case 'trip_reset': return a + ' undid setting off';
+      case 'note_added': return a + ' stuck a post-it' + post;
+      case 'note_edited': return a + ' edited a post-it' + post;
+      case 'note_removed': return a + ' took down a post-it' + post;
+      default: return a + ' did something in the lab';
+    }
+  }
+  function onDay(d) { return d === rooms.today() ? 'today' : 'on ' + shortDay.format(rooms.dayStart(d)); }
+  function clip(t) { t = String(t).replace(/\s+/g, ' ').trim(); return t.length > 80 ? t.slice(0, 79) + '…' : t; }
+  function nameList(list) {
+    var me = rooms.me();
+    var names = list.map(function (n) { return me && n.personId === me.id ? 'you' : n.name || 'someone'; });
+    return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
+  var DAY_KINDS = { coming_in: 1, not_coming: 1, on_the_way: 1, arrived: 1, plan_cleared: 1, trip_reset: 1 };
+  var ANSWER_KINDS = { invited: 1, accepted: 1, declined: 1 };
+  function groupOf(line) { return DAY_KINDS[line.kind] ? 'day' : line.detail.room || 'note'; }
+  function tagOf(line) {
+    if (DAY_KINDS[line.kind]) return 'Office day';
+    return (ANSWER_KINDS[line.kind] ? 'Invitation · ' : '') + (ROOM[line.detail.room] || 'Rooms');
+  }
+  function whenOf(iso) {
+    var t = new Date(iso);
+    return jakartaDayOf(iso) === rooms.today() ? time(iso) : shortDay.format(t) + ', ' + time(iso);
+  }
+
+  /* The bell counts what is new for this name: invitations to answer, and the big lines (bookings, answers,
+     office days) others wrote since the notices were last opened on this device. Post-its never ring it,
+     nor does a line about an invitation already waiting to be answered. */
+  function seenAt() { return rooms.seenAt(); }
+  function markSeen(at) { rooms.markSeen(at); }
+  /* A device that has never opened the notices starts from now, not from a week of history. */
+  function startSeen() {
+    if (seenAt() || !rooms.ready()) return;
+    var lines = rooms.activity();
+    markSeen(lines.length ? lines[0].at : rooms.now().toISOString());
+  }
+  function bigNews() {
+    var waiting = {};
+    rooms.notices().forEach(function (n) { waiting[n.booking.id] = true; });
+    return rooms.activity().filter(function (l) { return !l.mine && !l.minor && !(l.bookingId && waiting[l.bookingId]); });
+  }
+  function unread() {
+    var since = Date.parse(seenAt() || '') || 0;
+    return rooms.notices().length + bigNews().filter(function (l) { return Date.parse(l.at) > since; }).length;
+  }
+  function paintBell() {
+    var n = unread();
+    $('notices-count').textContent = String(n);
+    $('notices-count').hidden = n === 0;
+    $('notices-open').dataset.new = String(n > 0);
+    $('notices-open').setAttribute('aria-label', n ? 'Notices, ' + n + ' new' : 'Notices, nothing new');
+  }
+
   function paintNotices() {
     var list = $('notices-list');
     list.textContent = '';
@@ -3113,7 +3205,26 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       li.appendChild(acts);
       list.appendChild(li);
     });
-    $('notices-empty').hidden = notices.length > 0;
+    $('notices-answer-head').hidden = notices.length === 0;
+    var feed = $('activity-list'), lines = rooms.activity(), since = Date.parse(feedSince || '') || Infinity;
+    feed.textContent = '';
+    lines.forEach(function (line) {
+      var li = el('li', 'feed__item' + (line.minor ? ' feed__item--minor' : ''));
+      li.dataset.kind = line.kind;
+      li.dataset.group = groupOf(line);
+      if (!line.minor && !line.mine && Date.parse(line.at) > since) li.classList.add('is-new');
+      if (!line.minor) li.appendChild(el('span', 'feed__tag', tagOf(line)));
+      li.appendChild(el('span', 'feed__text', activityText(line)));
+      var at = el('time', 'feed__at', whenOf(line.at));
+      at.setAttribute('datetime', line.at);
+      li.appendChild(at);
+      feed.appendChild(li);
+    });
+    $('activity-head').hidden = lines.length === 0;
+    $('notices-empty').hidden = notices.length > 0 || lines.length > 0;
+    /* Open is read. */
+    if (lines.length) markSeen(lines[0].at);
+    paintBell();
     var allow = $('alerts-allow');
     var N = window.Notification;
     allow.hidden = !N || N.permission === 'granted' || N.permission === 'denied';
@@ -3123,16 +3234,17 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   /* A notice that appears while the page is open may also raise a browser notification, if allowed. */
   function alertNew() {
     if (!rooms.ready()) return;
-    var notices = rooms.notices();
     var first = seen === null;
     if (first) seen = {};
-    notices.forEach(function (n) {
-      if (seen[n.key]) return;
-      seen[n.key] = true;
-      var N = window.Notification;
-      if (first || !N || N.permission !== 'granted') return;
-      try { new N('Creative Episode', { body: noticeText(n), tag: n.key }); } catch (e) { /* the list on the page still has it */ }
-    });
+    rooms.notices().map(function (n) { return { key: n.key, body: noticeText(n) }; })
+      .concat(bigNews().map(function (l) { return { key: l.key, body: activityText(l) }; }))
+      .forEach(function (n) {
+        if (seen[n.key]) return;
+        seen[n.key] = true;
+        var N = window.Notification;
+        if (first || !N || N.permission !== 'granted') return;
+        try { new N('Creative Episode', { body: n.body, tag: n.key }); } catch (e) { /* the list on the page still has it */ }
+      });
   }
 
   /* --------------------------------------------------------- the sheet -- */
@@ -3151,7 +3263,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     else if (view === 'arrivals') paintPlayer();
   }
 
-  function render() { paintSign(); alertNew(); paintSheet(); }
+  function render() { startSeen(); paintSign(); alertNew(); paintSheet(); }
 
   /* opts: { room, day, msg } */
   function open(v, opts) {
@@ -3159,6 +3271,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     view = v;
     picking = null;
     if (v === 'arrivals') plDay = null;
+    if (v === 'notices') feedSince = seenAt();
     say($('sheet-msg'), opts.msg || '', opts.msg ? 'error' : null);
     ['detail-msg', 'book-msg'].forEach(function (id) { say($(id), ''); });
     if (v === 'schedule') {
