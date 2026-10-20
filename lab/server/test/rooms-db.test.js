@@ -1,6 +1,6 @@
 'use strict';
 
-/* The base of the HQ rooms test pyramid: the overlap rule, guest names, invitations, follows, no past
+/* The base of the HQ rooms test pyramid: the overlap rule, guest names, invitations, activity, no past
  * bookings, and the daily arrival row, against the database itself and the wall.* functions the Neon
  * Data API calls (as role authenticated). PTnnn is the HTTP status the Data API answers with. */
 
@@ -208,26 +208,38 @@ test('HQ rooms in the database', { skip: SKIP_DB }, async (t) => {
     await assert.rejects(call('mark_arrival', { me: sari, coming: null }), fails(400, 'validation_failed'));
   });
 
-  await t.test('follows: follow and unfollow names; not yourself', async () => {
-    assert.deepEqual((await call('follow', { me: sari, person_id: dewi, follow: true })).follows, [dewi]);
-    await call('follow', { me: sari, person_id: dewi, follow: true });
-    await call('follow', { me: sari, person_id: rina });
-    assert.equal(await count('follows WHERE person_id = $1', [sari]), 2);
-    assert.deepEqual((await call('follow', { me: sari, person_id: rina, follow: false })).follows, [dewi]);
-    await assert.rejects(call('follow', { me: sari, person_id: sari }), fails(400, 'validation_failed'));
-    await assert.rejects(call('follow', { me: sari, person_id: crypto.randomUUID() }), fails(404, 'not_found'));
-    await assert.rejects(call('follow', { me: null, person_id: dewi }), fails(401, 'person_required'));
+  await t.test('activity (016): every write is one line naming who did it; follows are gone', async () => {
+    assert.equal((await pool.query("SELECT to_regclass('follows') AS t")).rows[0].t, null);
+    await pool.query('TRUNCATE activity');
+    const m = await meeting(rina, at(40), at(41), { title: 'Retro', invite: [sari, dewi] });
+    await call('respond', { me: sari, booking_id: m.id, response: 'accepted' });
+    await call('respond', { me: dewi, booking_id: m.id, response: 'declined' });
+    await call('cancel_black_box', { me: rina, booking_id: m.id });
+    const h = await hallRequest(sari, at(42), at(43));
+    await decide(operator, h.id, 'confirm');
+    await call('mark_arrival', { me: dewi, coming: true, note: 'by 10' });
+    await call('mark_arrival', { me: dewi, coming: true, note: 'by 10' });   // said again: no new line
+    await call('mark_arrival', { me: dewi, coming: false });
+    const lines = (await call('hub_activity')).reverse();
+    const opName = (await pool.query('SELECT display_name FROM people WHERE id = $1', [operator])).rows[0].display_name;
+    assert.deepEqual(lines.map((l) => [l.kind, l.actorName, l.subjectName]), [
+      ['meeting_booked', 'Rina', null], ['invited', 'Rina', 'Sari'], ['invited', 'Rina', 'Dewi'],
+      ['accepted', 'Sari', 'Sari'], ['declined', 'Dewi', 'Dewi'], ['booking_cancelled', 'Rina', 'Rina'],
+      ['hall_requested', 'Sari', null], ['hall_confirmed', opName, 'Sari'],
+      ['coming_in', 'Dewi', null], ['not_coming', 'Dewi', null]]);
+    assert.deepEqual([lines[0].detail.title, lines[0].detail.room, lines[8].detail.note], ['Retro', 'black_box', 'by 10']);
+    assert.equal(lines[1].at, lines[0].at, 'a booking and the invitations it sends share one moment');
   });
 
-  await t.test('the snapshot carries today: names, follows, both rooms, arrivals, and the database clock', async () => {
+  await t.test('the snapshot carries today: names, both rooms, arrivals, activity, and the database clock', async () => {
     const m = await covering('black_box', 'active', rina, 'Board talk');
     const h = await covering('ck_hall', 'confirmed', sari, 'Podcast');
-    await call('follow', { me: sari, person_id: dewi });
     await call('mark_arrival', { me: dewi, coming: true });
     const rooms = await call('hub_rooms');
     assert.ok(Date.parse(rooms.now));
     assert.equal(rooms.people.length, 4);
-    assert.deepEqual(rooms.follows, [{ personId: sari, followsId: dewi }]);
+    assert.equal(rooms.follows, undefined);
+    assert.deepEqual(rooms.activity.slice(0, 1).map((l) => [l.kind, l.actorName]), [['coming_in', 'Dewi']]);
     const byId = Object.fromEntries(rooms.bookings.map((b) => [b.id, b]));
     assert.deepEqual([byId[m].room, byId[m].title, byId[m].byName], ['black_box', 'Board talk', 'Rina']);
     assert.equal(byId[h].room, 'ck_hall');
@@ -257,7 +269,7 @@ test('HQ rooms in the database', { skip: SKIP_DB }, async (t) => {
 
   await t.test('the API role cannot read or write the room tables directly', async () => {
     for (const sql of ['SELECT * FROM people', 'SELECT * FROM bookings', 'SELECT * FROM arrivals',
-      'SELECT * FROM meeting_invites', 'SELECT * FROM follows', 'SELECT wall_private.hq_rooms(NULL)']) {
+      'SELECT * FROM meeting_invites', 'SELECT * FROM activity', 'SELECT wall_private.hq_rooms(NULL)']) {
       await assert.rejects(asApi(pool, null, sql, [], 'anonymous'), (err) => err.code === '42501', sql);
     }
   });

@@ -14,7 +14,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const { SKIP_DB, setupDb, resetRooms, stubAuth, asApi, labApp, sessionCookie, signedIn } = require('./helpers');
-const { CORRIDOR_SRC, CSS, HTML, corridorPage, deviceStorage, button, until, NEON, neonStandIn } = require('./page-harness');
+const { CORRIDOR_SRC, CSS, HTML, corridorPage, deviceStorage, button, buttons, until, NEON, neonStandIn } = require('./page-harness');
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -110,7 +110,6 @@ test('the office player, end to end', { skip: SKIP_DB }, async (t) => {
         plan: (day) => 'PUT /v1/hub/arrivals/' + day,
         repeat: (day) => 'POST /v1/hub/arrivals/' + day + '/repeat',
         clear: (day) => 'DELETE /v1/hub/arrivals/' + day,
-        follow: (id) => 'PUT /v1/hub/follows/' + id,
         book: () => 'POST /v1/hub/black-box',
         invite: (id) => 'POST /v1/hub/bookings/' + id + '/invite',
         respond: (id) => 'POST /v1/hub/bookings/' + id + '/respond',
@@ -126,7 +125,7 @@ test('the office player, end to end', { skip: SKIP_DB }, async (t) => {
         return corridorPage({ CE_STORE: 'neon', CE_NEON: NEON, AbortController, atob, localStorage: storage, fetch: neonStandIn(pool, onCall) });
       },
       route: {
-        plan: () => 'plan_day', repeat: () => 'repeat_day', clear: () => 'clear_day', follow: () => 'follow',
+        plan: () => 'plan_day', repeat: () => 'repeat_day', clear: () => 'clear_day',
         book: () => 'book_black_box', invite: () => 'invite', respond: () => 'respond', cancel: () => 'cancel_black_box',
         hall: () => 'request_ck_hall', confirm: () => 'decide_ck_hall',
       },
@@ -537,24 +536,12 @@ test('the office player, end to end', { skip: SKIP_DB }, async (t) => {
         assert.equal(P.$('pl-list').hidden, true, 'pressing again hides it');
       });
 
-      await bt.test('Follow in the people list is stored and survives refreshes and a reload', async () => {
-        P.$('pl-who').click();
-        const dewiLine = () => P.$('arr-list').children.find((li) => li.textContent.includes('Dewi'));
-        button(dewiLine(), 'Follow').click();
-        await until(() => P.CE.rooms.isFollowing(dewi), 'following Dewi');
-        assert.equal(lastWrite(P).what, backend.route.follow(dewi));
-        assert.deepEqual([lastWrite(P).args.me, lastWrite(P).args.follow], [rina, true]);
-        const f = await pool.query('SELECT count(*)::int AS n FROM follows WHERE person_id = $1 AND follows_id = $2', [rina, dewi]);
-        assert.equal(f.rows[0].n, 1);
-        await P.CE.rooms.refresh();
-        await P.CE.rooms.refresh();
-        await P.settle();
-        assert.equal(button(dewiLine(), 'Following').getAttribute('aria-pressed'), 'true');
-        P = await reload(backend, P);
-        P.$('arrivals-open').click();
+      await bt.test('the people list has nothing to follow: everyone hears everyone', async () => {
         P.$('pl-who').click();
         await P.settle();
-        assert.equal(button(dewiLine(), 'Following').getAttribute('aria-pressed'), 'true', 'a reload reads it back');
+        const dewiLine = P.$('arr-list').children.find((li) => li.textContent.includes('Dewi'));
+        assert.deepEqual(buttons(dewiLine), []);
+        assert.equal(P.CE.rooms.follow, undefined);
         assert.doesNotMatch(CORRIDOR_SRC, /setInterval|setTimeout/, 'no timer of its own');
         P.$('sheet-close').click();
       });
@@ -570,21 +557,24 @@ test('the office player, end to end', { skip: SKIP_DB }, async (t) => {
         const start = new Date(Date.parse(next + 'T14:00:00+07:00')).toISOString();
         const end = new Date(Date.parse(next + 'T15:00:00+07:00')).toISOString();
         await call('book_black_box', { me: rina, booking_id: crypto.randomUUID(), title: 'Sync', start_at: start, end_at: end, invite: [bayu] });
-        await call('follow', { me: bayu, person_id: dewi, follow: true });
         await call('mark_arrival', { me: dewi, coming: true, note: 'from 10' });
         await B.CE.rooms.refresh();
+        // The invitation to answer, and Dewi coming in: the booking's own line waits behind the invitation.
         await until(() => B.$('notices-count').textContent === '2', 'two notices');
         assert.equal(B.$('notices-count').hidden, false);
         assert.equal(B.$('notices-open').dataset.new, 'true');
         assert.equal(B.$('notices-open').getAttribute('aria-label'), 'Notices, 2 new');
         B.$('notices-open').click();
         const items = B.$('notices-list').children.map((li) => li.children[1].textContent);
-        assert.equal(items.length, 2);
+        assert.equal(items.length, 1);
         assert.match(items[0], /^Rina Wati invited you to “Sync” · Black Box · /);
-        assert.equal(items[1], 'Dewi is coming in today · from 10');
+        const feed = B.$('activity-list').children.map((li) => li.textContent);
+        assert.match(feed[0], /^Office dayDewi.* coming in today.* · from 10\d\d:\d\d$/);
+        assert.match(feed[1], /^Black BoxRina Wati booked “Sync” · Black Box · .* and invited you\d\d:\d\d$/);
+        assert.equal(B.$('notices-open').getAttribute('aria-label'), 'Notices, 1 new', 'open is read; the invitation waits');
         button(B.$('notices-list').children[0], 'Accept').click();
-        await until(() => B.$('notices-count').textContent === '1', 'answered: one left');
-        assert.equal(B.$('notices-open').getAttribute('aria-label'), 'Notices, 1 new');
+        await until(() => B.$('notices-count').hidden, 'answered: nothing new');
+        assert.equal(B.$('notices-open').getAttribute('aria-label'), 'Notices, nothing new');
         B.close();
       });
 

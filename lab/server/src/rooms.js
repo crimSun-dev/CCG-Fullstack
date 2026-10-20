@@ -1,7 +1,7 @@
 'use strict';
 
-/* /v1/hub: the hub's names list, Black Box meetings (with chairs), CK Hall rentals, invitations, follows,
- * today's arrivals, and office-day plans with the trip in.
+/* /v1/hub: the hub's names list, Black Box meetings (with chairs), CK Hall rentals, invitations,
+ * today's arrivals, office-day plans with the trip in, and the activity everyone sees (016).
  *
  * The rules (overlap, no past bookings, who may cancel, approve, invite or answer, the Jakarta day)
  * live in the wall_private.hq_* functions of migrations 007 and 008, the same ones the Neon Data API
@@ -35,6 +35,11 @@ async function hq(pool, fn, args) {
 /* Everything the corridor shows today. The /v1/live hello carries it. */
 function roomsFor(pool, companyId) {
   return hq(pool, 'hq_rooms', [companyId]);
+}
+
+/* The last 7 days of what everyone did, newest first (016). */
+function activityFor(pool, companyId) {
+  return hq(pool, 'hq_activity', [companyId]);
 }
 
 /* A PTnnn error from an hq_* function is an answer for the client: status nnn, its code as the message. */
@@ -103,6 +108,8 @@ function roomsRouter({ pool, companyId, hub }) {
       throw err;
     }
     done(out);
+    // Every hq write is logged by the database's triggers; reads log nothing and the hub ignores a quiet burst.
+    if (hub && !fn.startsWith('hq_list')) hub.activityChanged();
   }
   function bookingDone(res, status) {
     return (booking) => {
@@ -134,15 +141,8 @@ function roomsRouter({ pool, companyId, hub }) {
     sendError(res, 403, 'names_from_ccg', 'Names come from CCG staff sign-in; they cannot be added here');
   });
 
-  router.put('/follows/:personId', async (req, res) => {
-    const input = writeInput(req, res);
-    if (!input) return;
-    if (!isId(req.params.personId)) return sendError(res, 404, 'not_found', 'No one on the hub has this name');
-    if (input.follow !== undefined && typeof input.follow !== 'boolean') return invalid(res, 'follow must be true or false');
-    await run(res, 'hq_follow', [companyId, input.me, req.params.personId, input.follow !== false], (out) => {
-      if (hub) hub.followsChanged(out);
-      res.json(out);
-    });
+  router.get('/activity', async (req, res) => {
+    res.json({ activity: await activityFor(pool, companyId) });
   });
 
   router.get('/rooms', async (req, res) => {
@@ -275,4 +275,4 @@ function roomsRouter({ pool, companyId, hub }) {
   return router;
 }
 
-module.exports = { roomsRouter, roomsFor };
+module.exports = { roomsRouter, roomsFor, activityFor };

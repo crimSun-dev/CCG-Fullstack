@@ -79,7 +79,6 @@ test('/v1/ccg/remove', { skip: SKIP_DB }, async (t) => {
       [companyId, at(2), at(3), other.id]);
     await pool.query('INSERT INTO meeting_invites (booking_id, person_id, invited_by) VALUES ($1, $2, $3), ($4, $5, $2)',
       [myMeeting.id, other.id, id, theirMeeting.id, id]);
-    await pool.query('INSERT INTO follows (person_id, follows_id) VALUES ($1, $2), ($2, $1)', [id, other.id]);
     await pool.query('INSERT INTO arrivals (company_id, person_id, coming) VALUES ($1, $2, true), ($1, $3, true)', [companyId, id, other.id]);
     return { sub, id, cookie, other, mine: mine.id, theirs: theirs.id, theirMeeting: theirMeeting.id };
   }
@@ -94,13 +93,15 @@ test('/v1/ccg/remove', { skip: SKIP_DB }, async (t) => {
     assert.equal(await count('SELECT count(*) AS n FROM notes WHERE author_id = $1 OR id = $2', [s.id, s.mine]), 0);
     assert.equal(await count('SELECT count(*) AS n FROM bookings WHERE created_by = $1', [s.id]), 0);
     assert.equal(await count('SELECT count(*) AS n FROM meeting_invites WHERE person_id = $1 OR invited_by = $1', [s.id]), 0);
-    assert.equal(await count('SELECT count(*) AS n FROM follows WHERE person_id = $1 OR follows_id = $1', [s.id]), 0);
     assert.equal(await count('SELECT count(*) AS n FROM arrivals WHERE person_id = $1', [s.id]), 0);
+    // Their activity goes, and so does any line naming them or their notes (016).
+    assert.equal(await count('SELECT count(*) AS n FROM activity WHERE actor_id = $1 OR subject_id = $1 OR note_id = $2', [s.id, s.mine]), 0);
 
     assert.equal(await count('SELECT count(*) AS n FROM people WHERE id = $1', [s.other.id]), 1);
     assert.equal(await count('SELECT count(*) AS n FROM notes WHERE id = $1', [s.theirs]), 1);
     assert.equal(await count('SELECT count(*) AS n FROM bookings WHERE id = $1', [s.theirMeeting]), 1);
     assert.equal(await count('SELECT count(*) AS n FROM arrivals WHERE person_id = $1', [s.other.id]), 1);
+    assert.equal(await count("SELECT count(*) AS n FROM activity WHERE actor_id = $1 AND kind IN ('note_added', 'meeting_booked', 'coming_in')", [s.other.id]), 3);
 
     // The old session is dead at once, and the name is off the shared list.
     await request(app).get('/v1/ccg/me').set('Cookie', s.cookie).expect(401);
@@ -146,7 +147,6 @@ test('015 removes the stock Draven', { skip: SKIP_DB }, async (t) => {
   const real = await staffPerson(pool, companyId, 'Draven');
   const note = await q("INSERT INTO notes (company_id, body, author_id) VALUES ($1, 'kept', $2) RETURNING id", [companyId, stock.id]);
   await pool.query('INSERT INTO arrivals (company_id, person_id, coming) VALUES ($1, $2, true)', [companyId, stock.id]);
-  await pool.query('INSERT INTO follows (person_id, follows_id) VALUES ($1, $2), ($2, $1)', [stock.id, real.id]);
 
   const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '015_remove_stock_draven.sql'), 'utf8');
   await pool.query(sql);
@@ -156,6 +156,6 @@ test('015 removes the stock Draven', { skip: SKIP_DB }, async (t) => {
   assert.equal(await n('SELECT count(*) AS n FROM people WHERE id = $1', [stock.id]), 0);
   assert.equal(await n('SELECT count(*) AS n FROM people WHERE id = $1', [real.id]), 1);
   assert.equal(await n('SELECT count(*) AS n FROM arrivals WHERE person_id = $1', [stock.id]), 0);
-  assert.equal(await n('SELECT count(*) AS n FROM follows WHERE person_id = $1 OR follows_id = $1', [stock.id]), 0);
+  assert.equal(await n('SELECT count(*) AS n FROM activity WHERE actor_id = $1', [stock.id]), 0);
   assert.equal((await q('SELECT author_id FROM notes WHERE id = $1', [note.id])).author_id, null, 'the note stays, unsigned');
 });

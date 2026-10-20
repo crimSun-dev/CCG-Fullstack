@@ -140,18 +140,27 @@ test('CE.rooms on the local backend', async (t) => {
     await rooms.pick(rina.id);
   });
 
-  await t.test('follows: a followed name coming in is a notice', async () => {
-    await rooms.pick(sari.id);
-    await rooms.follow(dewi.id, true);
-    assert.ok(rooms.isFollowing(dewi.id));
+  await t.test('activity: everyone hears every action; a booking carries the names it invited; post-its are minor', async () => {
+    assert.equal(rooms.follow, undefined, 'there is nothing to follow');
     await rooms.pick(dewi.id);
     await rooms.markArrival(true);
     await rooms.markArrival(true, 'from 10');
     assert.equal(rooms.arrivals().length, 1, 'one line per name per day');
     await rooms.pick(sari.id);
-    assert.deepEqual(plain(rooms.notices().map((n) => [n.kind, n.arrival.name, n.arrival.note])), [['arrival', 'Dewi', 'from 10']]);
-    await rooms.follow(dewi.id, false);
-    assert.equal(rooms.notices().length, 0);
+    await until(() => rooms.activity()[0] && rooms.activity()[0].detail.note === 'from 10', 'the change is a line');
+    const lines = plain(rooms.activity());
+    assert.deepEqual(lines.slice(0, 2).map((l) => [l.kind, l.actorName, !!l.detail.changed, l.minor, l.mine]),
+      [['coming_in', 'Dewi', true, false, false], ['coming_in', 'Dewi', false, false, false]]);
+    const booked = lines.find((l) => l.kind === 'meeting_booked' && l.detail.title === 'Pitch review');
+    assert.deepEqual(booked.invitees.map((i) => i.name), ['Dewi', 'Sari'], 'one line for the booking and its invitations');
+    assert.ok(lines.some((l) => l.kind === 'accepted' && l.actorName === 'Sari'));
+    assert.ok(lines.some((l) => l.kind === 'invited' && l.actorName === 'Sari' && l.invitees[0].name === 'Pak Hall'));
+    assert.ok(lines.some((l) => l.kind === 'booking_cancelled'), 'the cancelled meeting is still told');
+    assert.equal(rooms.notices().length, 0, 'notices are invitations to answer; everything else is activity');
+
+    await CE.notes.create({ id: CE.uuid(), body: 'Bring snacks', color: 'yellow' });
+    await until(() => rooms.activity()[0].kind === 'note_added', 'a post-it is a line');
+    assert.deepEqual(plain([rooms.activity()[0].minor, rooms.activity()[0].mine, rooms.activity()[0].detail.body]), [true, true, 'Bring snacks']);
   });
 
   await t.test('CK Hall: a guest requests, the hall operator approves, the ON AIR lamp follows', { skip: SKIP_NOT_NOW }, async () => {
@@ -276,11 +285,15 @@ test('CE.rooms on the office backend (/v1 + /v1/live)', { skip: SKIP_DB }, async
     await until(() => !lobby.ckHallOnAir(), 'lamp off');
   });
 
-  await t.test('following: Rina hears that Sari is coming in', async () => {
-    await rina.follow(sari.me().id, true);
+  await t.test('everyone hears that Sari is coming in, with no one following anyone', async () => {
     await sari.markArrival(true);
     await sari.markArrival(true, 'after lunch');
-    await until(() => rina.notices().some((n) => n.kind === 'arrival' && n.arrival.note === 'after lunch'), 'Rina notified');
+    for (const p of [rina, lobby, pak]) {
+      await until(() => p.activity().some((l) => l.kind === 'coming_in' && l.actorName === 'Sari' && l.detail.note === 'after lunch'), 'heard');
+    }
+    assert.equal(sari.activity().find((l) => l.kind === 'coming_in').mine, true);
+    const said = rina.activity().filter((l) => l.actorName === 'Pak Hall').map((l) => l.kind);
+    assert.ok(said.includes('hall_confirmed') && said.includes('hall_declined'), 'hall decisions name the operator');
     await until(() => lobby.arrivals().length === 1, 'everyone sees today\'s list, one line per name');
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM arrivals')).rows[0].n, 1);
   });

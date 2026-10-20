@@ -18,7 +18,10 @@ BEGIN
 
   DELETE FROM lab_sessions WHERE person_id = ANY (gone);
   DELETE FROM arrivals WHERE person_id = ANY (gone);
-  DELETE FROM follows WHERE person_id = ANY (gone) OR follows_id = ANY (gone);
+  -- 016 drops follows; run again after it, there are none to clear.
+  IF to_regclass('follows') IS NOT NULL THEN
+    DELETE FROM follows WHERE person_id = ANY (gone) OR follows_id = ANY (gone);
+  END IF;
   DELETE FROM meeting_invites
    WHERE person_id = ANY (gone) OR invited_by = ANY (gone)
       OR booking_id IN (SELECT id FROM bookings WHERE created_by = ANY (gone));

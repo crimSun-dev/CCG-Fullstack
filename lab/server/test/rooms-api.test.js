@@ -1,7 +1,7 @@
 'use strict';
 
 /* /v1/hub and its /v1/live fan-out against TEST_DATABASE_URL: the names list, Black Box meetings,
- * CK Hall rentals, invitations, follows, and today's arrivals. The caller names themselves with `me`. */
+ * CK Hall rentals, invitations, today's arrivals, and the activity everyone sees. The caller names themselves with `me`. */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -189,30 +189,34 @@ test('HQ rooms over /v1/hub', { skip: SKIP_DB }, async (t) => {
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM arrivals')).rows[0].n, 2);
   });
 
-  await t.test('follows: follow and unfollow a name', async () => {
-    const on = (await api().put('/v1/hub/follows/' + dewi).send({ me: sari, follow: true }).expect(200)).body;
-    assert.deepEqual(on, { personId: sari, follows: [dewi] });
-    const off = (await api().put('/v1/hub/follows/' + dewi).send({ me: sari, follow: false }).expect(200)).body;
-    assert.deepEqual(off.follows, []);
-    await api().put('/v1/hub/follows/' + sari).send({ me: sari }).expect(400);
-    await api().put('/v1/hub/follows/' + crypto.randomUUID()).send({ me: sari }).expect(404);
-    await api().put('/v1/hub/follows/' + dewi).send({ me: sari, follow: 'yes' }).expect(400);
+  await t.test("activity: follows are gone; every post-it write is a line naming the session's person", async () => {
+    await api().put('/v1/hub/follows/' + dewi).send({ me: sari, follow: true }).expect(404);
+    const n = (await api().post('/v1/notes').send({ id: crypto.randomUUID(), body: 'Snacks' }).expect(201)).body;
+    await api().patch('/v1/notes/' + n.id).send({ body: 'Snacks at 3', revision: n.revision }).expect(200);
+    const lines = async () => (await api().get('/v1/hub/activity').expect(200)).body.activity.filter((l) => l.noteId === n.id);
+    assert.deepEqual((await lines()).map((l) => [l.kind, l.actorName, l.detail.body, !!l.detail.edited]),
+      [['note_added', 'Rina', 'Snacks at 3', true]], 'an edit soon after by the same person is the same line');
+    await api().delete('/v1/notes/' + n.id).expect(204);
+    assert.deepEqual((await lines()).map((l) => [l.kind, l.actorName]), [['note_removed', 'Rina'], ['note_added', 'Rina']]);
+    await api().post('/v1/notes/' + n.id + '/restore').expect(200);
+    assert.deepEqual((await lines()).map((l) => l.kind), ['note_added'], 'putting it back takes the take-down away');
+    await stranger().get('/v1/hub/activity').expect(401);
   });
 
-  await t.test('/v1/live: the hello carries today\'s rooms, names, follows, and arrivals', async () => {
+  await t.test('/v1/live: the hello carries today\'s rooms, names, arrivals, and activity', async () => {
     await pool.query("INSERT INTO bookings (company_id, room, title, start_at, end_at, status, created_by)" +
       " VALUES ($1, 'black_box', 'Board talk', now() - interval '10 minutes', now() + interval '20 minutes', 'active', $2)", [companyId, rina]);
     await api().put('/v1/hub/arrivals/today').send({ me: dewi, coming: true }).expect(200);
-    await api().put('/v1/hub/follows/' + dewi).send({ me: sari }).expect(200);
     const w = await wall();
     const rooms = w.hello.rooms;
     assert.equal(rooms.bookings.find((b) => b.room === 'black_box').title, 'Board talk');
     assert.equal(rooms.people.length, 4);
-    assert.deepEqual(rooms.follows, [{ personId: sari, followsId: dewi }]);
+    assert.equal(rooms.follows, undefined);
+    assert.ok(rooms.activity.some((l) => l.kind === 'coming_in' && l.actorName === 'Dewi'));
     assert.equal(rooms.arrivals[0].name, 'Dewi');
   });
 
-  await t.test('/v1/live: bookings, invitations, arrivals, names, and follows reach every wall', async () => {
+  await t.test('/v1/live: bookings, invitations, arrivals, names, and activity reach every wall', async () => {
     const a = await wall();
     const b = await wall();
     const m = (await meeting(rina, at(1), at(2), { title: 'Pitch', invite: [sari] }).expect(201)).body;
@@ -225,7 +229,10 @@ test('HQ rooms over /v1/hub', { skip: SKIP_DB }, async (t) => {
     // A new name arrives only by a CCG staff account entering.
     const p = (await request(srv.base).post('/v1/ccg/enter').send({ token: mintAssertion({ name: 'Newcomer' }) }).expect(200)).body.person;
     assert.equal((await b.next('person', (f) => f.person.id === p.id)).person.displayName, 'Newcomer');
-    await api().put('/v1/hub/follows/' + dewi).send({ me: sari }).expect(200);
-    assert.deepEqual((await a.next('follows')).follows, [dewi]);
+    // Every write is followed by the whole recent activity, one frame for a burst.
+    await api().put('/v1/hub/arrivals/today').send({ me: dewi, coming: false }).expect(200);
+    const told = await b.next('activity', (f) => f.activity.some((l) => l.kind === 'not_coming' && l.actorName === 'Dewi'));
+    const pitch = told.activity.filter((l) => l.bookingId === m.id).map((l) => [l.kind, l.actorName, l.subjectName]).reverse();
+    assert.deepEqual(pitch, [['meeting_booked', 'Rina', null], ['invited', 'Rina', 'Sari'], ['accepted', 'Sari', 'Sari']]);
   });
 });
