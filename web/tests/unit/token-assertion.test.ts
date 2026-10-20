@@ -27,9 +27,17 @@ describe("lab assertion", () => {
     expect(decode(issueLabAssertion(staff, SECRET, NOW)!).jti).not.toBe(claims.jti);
   });
 
+  it("carries the profile picture's URL when there is one, and null when there is not", () => {
+    expect(decode(issueLabAssertion(staff, SECRET, NOW)!).avatar).toBeNull();
+    const pic = `https://ccg.test/avatars/${staff.id}?v=1`;
+    const token = issueLabAssertion(staff, SECRET, NOW, pic)!;
+    expect(decode(token).avatar).toBe(pic);
+    expect(verifyLabAssertion(token, SECRET, NOW)?.avatar).toBe(pic);
+  });
+
   it("never carries a password or hash", () => {
     const token = issueLabAssertion({ ...staff, passwordHash: "$2b$12$secret" } as AdminUser, SECRET, NOW)!;
-    expect(Object.keys(decode(token)).sort()).toEqual(["aud", "email", "exp", "iat", "iss", "jti", "name", "role", "sub", "v"]);
+    expect(Object.keys(decode(token)).sort()).toEqual(["aud", "avatar", "email", "exp", "iat", "iss", "jti", "name", "role", "sub", "v"]);
     expect(Buffer.from(token.split(".")[0], "base64url").toString()).not.toContain("secret");
   });
 

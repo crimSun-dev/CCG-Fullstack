@@ -1,4 +1,5 @@
 import { createAccountService, type AccountService } from "./account-service";
+import { createAvatarStore, type AvatarStore } from "./avatar";
 import { createContentRepository } from "./content-repository";
 import { db } from "./db";
 import { env } from "./env";
@@ -26,6 +27,10 @@ export function sessionService(): SessionService {
 
 export function accountService(): AccountService {
   return createAccountService({ prisma: db(), mailer: mailer() });
+}
+
+export function avatarStore(): AvatarStore {
+  return createAvatarStore(db());
 }
 
 // Null when GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is unset. Callers show Google as unavailable.

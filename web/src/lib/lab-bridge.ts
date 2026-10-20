@@ -218,6 +218,29 @@ export async function proxyLab(req: NextRequest, rest: string): Promise<Response
   });
 }
 
+// A server-to-server JSON POST into the embedded lab, for notices this site sends on its own (no
+// visitor request behind it). Resolves the lab's status code; rejects when the lab cannot start.
+export async function postToLab(path: string, json: unknown): Promise<number> {
+  const lab = await withTimeout(startLab(), LAB_START_TIMEOUT_MS, "Starting CK Virtual Lab");
+  const body = Buffer.from(JSON.stringify(json));
+  return new Promise<number>((resolve, reject) => {
+    const upstream = http.request(
+      {
+        createConnection: () => lab.connect(),
+        method: "POST",
+        path,
+        headers: { host: "localhost", "content-type": "application/json", "content-length": String(body.length), connection: "close" },
+      },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 502);
+      },
+    );
+    upstream.on("error", reject);
+    upstream.end(body);
+  });
+}
+
 function first(value: string | string[] | undefined): string | undefined {
   return (Array.isArray(value) ? value[0] : value)?.split(",")[0]?.trim() || undefined;
 }
