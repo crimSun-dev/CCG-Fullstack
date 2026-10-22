@@ -25,7 +25,7 @@ The public site for CK Coaching Group (CCG), a CEO coaching practice founded by 
 
 ## Operating Context
 
-- Head office (owner-confirmed 18 Oct 2026): Marketing Gallery, Alam Sutera Marketing Office, Jl. Jalur Sutera Boulevard Kav. 28A, RT.002/RW.003, Panunggangan Tim., Kec. Pinang, Tangerang 15143, Floor 21A. Branch: Seoul (no street address).
+- Head office (owner-confirmed 18 Oct 2026): The Prominence, Alam Sutera Marketing Office, Jl. Jalur Sutera Boulevard Kav. 28A, RT.002/RW.003, Panunggangan Tim., Kec. Pinang, Tangerang 15143, Floor 21A. Branch: Seoul (no street address).
 - Leads are stored in Postgres; a notice email goes out through Resend. Staff reply by hand when the email status is PENDING or FAILED.
 - Admin saves revalidate the public cache tag.
 

@@ -57,7 +57,7 @@ const offices = [
     city: "Jakarta",
     kind: "HEAD",
     address:
-      "Marketing Gallery, Alam Sutera Marketing Office, Jl. Jalur Sutera Boulevard Kav. 28A, RT.002/RW.003, Panunggangan Tim., Kec. Pinang, Tangerang 15143, Floor 21A",
+      "The Prominence, Alam Sutera Marketing Office, Jl. Jalur Sutera Boulevard Kav. 28A, RT.002/RW.003, Panunggangan Tim., Kec. Pinang, Tangerang 15143, Floor 21A",
   },
   { city: "Seoul", kind: "BRANCH", address: null },
 ];
