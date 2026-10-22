@@ -18,7 +18,7 @@ const AUDIENCE = 'ck-virtual-lab';
 // A removal notice is signed for its own audience, so it can never be replayed as a way in, nor a
 // hand-off as a removal.
 const REMOVE_AUDIENCE = 'ck-virtual-lab:remove';
-const STAFF_ROLES = new Set(['ADMIN', 'EDITOR', 'STAFF']);
+const STAFF_ROLES = new Set(['OWNER', 'ADMIN', 'EDITOR', 'STAFF']);
 const MAX_LIFE_SECONDS = 300;   // CCG issues 60; anything longer was not minted by it
 const LEEWAY_SECONDS = 15;      // clock drift between the two hosts
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

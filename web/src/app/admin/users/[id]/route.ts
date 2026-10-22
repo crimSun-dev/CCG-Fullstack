@@ -3,7 +3,7 @@ import { adminFromRequest } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
 import { isSameOrigin, seeOther } from "@/lib/http";
 import { removeFromLab } from "@/lib/lab-removal";
-import { cleanSearch, createStaffRoles } from "@/lib/staff-roles";
+import { canManageRoles, cleanSearch, createStaffRoles } from "@/lib/staff-roles";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,28 +18,37 @@ function usersPath(query: Record<string, string | undefined>): string {
   return qs ? `/admin/users?${qs}` : "/admin/users";
 }
 
-// Sets or clears STAFF on one account. ADMIN only; the service enforces the rest. Clearing also removes
-// the account from CK Virtual Lab; if the lab is not reached, the page offers to send it again.
+const SAVED: Record<string, string> = {
+  MEMBER: "cleared",
+  STAFF: "staff",
+  ADMIN: "admin",
+};
+
+// Sets MEMBER, STAFF or ADMIN. OWNER may assign all three; ADMIN may only assign MEMBER/STAFF.
+// Losing staff access (to MEMBER) also removes the account from CK Virtual Lab.
 export async function POST(req: NextRequest, { params }: Ctx) {
   if (!isSameOrigin(req)) return Response.json({ error: "Cross-origin request" }, { status: 403 });
   const actor = await adminFromRequest(req);
   if (!actor) return seeOther(req, "/login");
-  if (actor.role !== "ADMIN") return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!canManageRoles(actor.role)) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
   if (!UUID.test(id)) return Response.json({ error: "Not found" }, { status: 404 });
 
   const form = await req.formData();
-  const staff = form.get("staff") === "true";
+  const role = form.get("role");
   const q = cleanSearch(typeof form.get("q") === "string" ? (form.get("q") as string) : undefined);
-  const result = await createStaffRoles(db()).setStaff(actor, id, staff);
+  if (typeof role !== "string") return seeOther(req, usersPath({ error: "invalid_role", q }));
+
+  const roles = createStaffRoles(db());
+  const result = await roles.setRole(actor, id, role);
   if (!result.ok) {
     if (result.error === "forbidden") return Response.json({ error: "Forbidden" }, { status: 403 });
     if (result.error === "not_found") return Response.json({ error: "Not found" }, { status: 404 });
     return seeOther(req, usersPath({ error: result.error, q }));
   }
-  if (!staff && (await removeFromLab(id)) === "failed") {
+  if (roles.lostLabAccess(result.previous, result.next) && (await removeFromLab(id)) === "failed") {
     return seeOther(req, usersPath({ error: "lab_unreached", id, q }));
   }
-  return seeOther(req, usersPath({ saved: staff ? "granted" : "cleared", q }));
+  return seeOther(req, usersPath({ saved: SAVED[result.next] ?? "staff", q }));
 }

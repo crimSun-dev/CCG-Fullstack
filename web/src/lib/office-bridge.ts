@@ -3,9 +3,11 @@ import type http from "node:http";
 import path from "node:path";
 
 /** Matches office/server/src/staff-access.js. The server is the authority. */
-export function staffPermissions(role: string): { role: "ADMIN" | "EDITOR"; notes: true; draw: true; canClear: boolean } | null {
-  if (role !== "ADMIN" && role !== "EDITOR") return null;
-  return { role, notes: true, draw: true, canClear: role === "ADMIN" };
+export function staffPermissions(
+  role: string,
+): { role: "OWNER" | "ADMIN" | "EDITOR"; notes: true; draw: true; canClear: boolean } | null {
+  if (role !== "OWNER" && role !== "ADMIN" && role !== "EDITOR") return null;
+  return { role, notes: true, draw: true, canClear: role === "OWNER" || role === "ADMIN" };
 }
 
 export const STAFF_HEADER = "x-ccg-staff-role";

@@ -79,7 +79,7 @@ describe("enquiry list (/admin)", () => {
     await expect(openAdmin()).rejects.toThrow("REDIRECT /login");
   });
 
-  it.each(["STAFF", "EDITOR", "ADMIN"] as const)("%s reads every enquiry, unfiltered", async (role) => {
+  it.each(["STAFF", "EDITOR", "ADMIN", "OWNER"] as const)("%s reads every enquiry, unfiltered", async (role) => {
     current = user(role);
     await openAdmin();
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -101,7 +101,7 @@ describe("CK Virtual Lab button", () => {
     expect(LabButton({ role: "MEMBER" })).toBeNull();
   });
 
-  it.each(["STAFF", "EDITOR", "ADMIN"])("shows the supplied image as a submit control for %s", (role) => {
+  it.each(["STAFF", "EDITOR", "ADMIN", "OWNER"])("shows the supplied image as a submit control for %s", (role) => {
     const el = LabButton({ role })!;
     expect(el.props).toMatchObject({ method: "post", action: "/lab/launch" });
     const [img] = findAll(el, (e) => e.type === "img");

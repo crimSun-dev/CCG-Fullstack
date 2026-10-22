@@ -1,25 +1,77 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import { currentAdmin } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
-import { canManageRoles, cleanSearch, createStaffRoles } from "@/lib/staff-roles";
+import { canManageAdmins, canManageRoles, cleanSearch, createStaffRoles } from "@/lib/staff-roles";
+import { isOwnerEmail } from "@/lib/session-service";
 
 export const metadata: Metadata = { title: "Accounts", robots: { index: false, follow: false } };
 
-const SAVED: Record<string, string> = { granted: "Staff granted.", cleared: "Staff cleared and removed from CK Virtual Lab." };
+const SAVED: Record<string, string> = {
+  staff: "Staff granted.",
+  admin: "Admin granted (includes staff access).",
+  cleared: "Role cleared to member and removed from CK Virtual Lab if they had staff access.",
+};
 const ERRORS: Record<string, string> = {
   self: "You cannot change your own role.",
-  fixed_role: "ADMIN and EDITOR come from the staff command and are not changed here.",
-  lab_unreached: "Staff cleared, but CK Virtual Lab could not be reached, so their name is still there.",
+  fixed_role: "That account's role is not changed from this page.",
+  owner_protected: "The owner account cannot be changed.",
+  invalid_role: "Choose member, staff, or admin.",
+  lab_unreached: "Role cleared, but CK Virtual Lab could not be reached, so their name is still there.",
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Props = { searchParams: Promise<{ saved?: string; error?: string; id?: string; q?: string }> };
 
-// Every registered account, for an ADMIN to grant or clear STAFF. Anyone else gets a 404, so the
-// list's existence is not advertised either. `q` narrows the list by name or email.
+function RoleActions({
+  actorRole,
+  actorId,
+  account,
+  keepQ,
+}: {
+  actorRole: string;
+  actorId: string;
+  account: { id: string; email: string; role: string };
+  keepQ: ReactNode;
+}) {
+  if (account.id === actorId) return null;
+  if (account.role === "OWNER" || isOwnerEmail(account.email) || account.role === "EDITOR") return null;
+
+  const owner = canManageAdmins(actorRole);
+  const forms: { role: string; label: string; quiet?: boolean }[] = [];
+
+  if (account.role === "MEMBER") {
+    forms.push({ role: "STAFF", label: "Make staff" });
+    if (owner) forms.push({ role: "ADMIN", label: "Make admin" });
+  } else if (account.role === "STAFF") {
+    forms.push({ role: "MEMBER", label: "Clear staff", quiet: true });
+    if (owner) forms.push({ role: "ADMIN", label: "Make admin" });
+  } else if (account.role === "ADMIN" && owner) {
+    forms.push({ role: "STAFF", label: "Clear admin (keep staff)", quiet: true });
+    forms.push({ role: "MEMBER", label: "Clear to member", quiet: true });
+  } else {
+    return null;
+  }
+
+  return (
+    <div className="admin-role-actions">
+      {forms.map((f) => (
+        <form key={f.role + f.label} method="post" action={`/admin/users/${account.id}`}>
+          <input type="hidden" name="role" value={f.role} />
+          {keepQ}
+          <button type="submit" className={f.quiet ? "op-quiet" : undefined}>
+            {f.label}
+          </button>
+        </form>
+      ))}
+    </div>
+  );
+}
+
+// Accounts list for OWNER and ADMIN. OWNER may grant ADMIN; ADMIN may only grant STAFF.
 export default async function UsersPage({ searchParams }: Props) {
   const admin = await currentAdmin();
   if (!admin) redirect("/login");
@@ -28,9 +80,8 @@ export default async function UsersPage({ searchParams }: Props) {
   const params = await searchParams;
   const q = cleanSearch(params.q);
   const accounts = await createStaffRoles(db()).list(q);
-  const keepQ = q ? (
-    <input type="hidden" name="q" value={q} />
-  ) : null;
+  const keepQ = q ? <input type="hidden" name="q" value={q} /> : null;
+  const owner = canManageAdmins(admin.role);
 
   return (
     <div className="operate">
@@ -50,7 +101,7 @@ export default async function UsersPage({ searchParams }: Props) {
         {params.error && <p role="alert">{ERRORS[params.error] ?? "Not saved."}</p>}
         {params.error === "lab_unreached" && params.id && UUID.test(params.id) && (
           <form method="post" action={`/admin/users/${params.id}`}>
-            <input type="hidden" name="staff" value="false" />
+            <input type="hidden" name="role" value="MEMBER" />
             {keepQ}
             <button type="submit">Remove from CK Virtual Lab again</button>
           </form>
@@ -59,8 +110,12 @@ export default async function UsersPage({ searchParams }: Props) {
         <section className="admin-section">
           <h2>Registered accounts{q ? ` matching “${q}”` : ""} ({accounts.length})</h2>
           <p>
-            STAFF can read every enquiry and enter CK Virtual Lab. It changes at once, without a new sign-in. Clearing
-            STAFF also removes the person from CK Virtual Lab, with their notes and bookings there.
+            STAFF can read every enquiry and enter CK Virtual Lab. ADMIN can do that and grant or clear STAFF for others,
+            but cannot change other admins or the owner. ADMIN includes staff access.
+            {owner
+              ? " As owner, you can also grant or clear ADMIN."
+              : " Only the owner can grant or clear ADMIN."}{" "}
+            Changes apply at once, without a new sign-in. Clearing someone to member also removes them from CK Virtual Lab.
           </p>
           <form className="admin-search" method="get" action="/admin/users" role="search">
             <p>
@@ -96,7 +151,7 @@ export default async function UsersPage({ searchParams }: Props) {
                     <th>Email</th>
                     <th>Role</th>
                     <th>Google</th>
-                    <th>Staff</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -107,17 +162,7 @@ export default async function UsersPage({ searchParams }: Props) {
                       <td>{a.role}</td>
                       <td>{a.googleLinked ? "Linked" : ""}</td>
                       <td>
-                        {a.id === admin.id || (a.role !== "MEMBER" && a.role !== "STAFF") ? (
-                          ""
-                        ) : (
-                          <form method="post" action={`/admin/users/${a.id}`}>
-                            <input type="hidden" name="staff" value={a.role === "STAFF" ? "false" : "true"} />
-                            {keepQ}
-                            <button type="submit" className={a.role === "STAFF" ? "op-quiet" : undefined}>
-                              {a.role === "STAFF" ? "Clear staff" : "Make staff"}
-                            </button>
-                          </form>
-                        )}
+                        <RoleActions actorRole={admin.role} actorId={admin.id} account={a} keepQ={keepQ} />
                       </td>
                     </tr>
                   ))}
