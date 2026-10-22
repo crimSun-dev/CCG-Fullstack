@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminUser } from "@/lib/session-service";
+import type { SetRoleResult } from "@/lib/staff-roles";
 
 let current: AdminUser | null = null;
-const setRole = vi.fn(async () => ({ ok: true, previous: "MEMBER", next: "STAFF" as const }));
+const setRole = vi.fn(async (): Promise<SetRoleResult> => ({ ok: true, previous: "MEMBER", next: "STAFF" }));
 const lostLabAccess = vi.fn((previous: string, next: string) => previous !== "MEMBER" && next === "MEMBER");
 vi.mock("@/lib/admin-auth", () => ({ adminFromRequest: async () => current }));
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
@@ -30,7 +31,7 @@ const user = (role: AdminUser["role"]): AdminUser => ({ id: "u", email: "u@x.co"
 
 beforeEach(() => {
   setRole.mockClear();
-  setRole.mockResolvedValue({ ok: true, previous: "MEMBER", next: "STAFF" });
+  setRole.mockResolvedValue({ ok: true, previous: "MEMBER", next: "STAFF" } satisfies SetRoleResult);
   lostLabAccess.mockClear();
   lostLabAccess.mockImplementation((previous, next) => previous !== "MEMBER" && next === "MEMBER");
   removeFromLab.mockClear();
