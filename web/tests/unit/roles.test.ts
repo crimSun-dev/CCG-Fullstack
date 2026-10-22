@@ -3,6 +3,7 @@ import { cleanName, homeForRole, isEmail, isStaffRole, passwordProblem } from "@
 
 describe("role policy", () => {
   it("sends staff roles to /admin and a member to /account", () => {
+    expect(homeForRole("OWNER")).toBe("/admin");
     expect(homeForRole("ADMIN")).toBe("/admin");
     expect(homeForRole("EDITOR")).toBe("/admin");
     expect(homeForRole("STAFF")).toBe("/admin");
@@ -10,8 +11,8 @@ describe("role policy", () => {
     expect(homeForRole("anything-else")).toBe("/account");
   });
 
-  it("treats ADMIN, EDITOR and STAFF as staff, never MEMBER", () => {
-    expect(["ADMIN", "EDITOR", "STAFF", "MEMBER"].map(isStaffRole)).toEqual([true, true, true, false]);
+  it("treats OWNER, ADMIN, EDITOR and STAFF as staff, never MEMBER", () => {
+    expect(["OWNER", "ADMIN", "EDITOR", "STAFF", "MEMBER"].map(isStaffRole)).toEqual([true, true, true, true, false]);
   });
 });
 

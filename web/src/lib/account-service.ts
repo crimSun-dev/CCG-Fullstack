@@ -2,7 +2,15 @@ import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto"
 import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { CodePurpose, Mailer } from "./mailer";
-import { cleanName, hashPassword, isEmail, NAME_MAX, normalizeEmail, passwordProblem } from "./session-service";
+import {
+  cleanName,
+  hashPassword,
+  isEmail,
+  isOwnerEmail,
+  NAME_MAX,
+  normalizeEmail,
+  passwordProblem,
+} from "./session-service";
 
 // Self-service upkeep for a signed-in account, and the emailed one-time codes behind a password
 // reset and an email change. Sessions themselves stay in SessionService.
@@ -147,6 +155,10 @@ export function createAccountService(deps: {
       if (!isEmail(target)) return fail("invalid_email", "Enter a valid email address.");
       const user = await prisma.adminUser.findUniqueOrThrow({ where: { id: userId } });
       if (target === user.email) return fail("same_email", "That is already your email.");
+      // The owner mailbox stays on that address; nobody may claim it from another account either.
+      if (user.role === "OWNER" || isOwnerEmail(user.email) || isOwnerEmail(target)) {
+        return fail("owner_email", "The owner email cannot be changed or claimed.");
+      }
       // A taken address gets the same answer as a free one, so this form cannot list accounts.
       if (await prisma.adminUser.findUnique({ where: { email: target } })) return { ok: true };
       const code = await issueCode(user.id, "EMAIL_CHANGE", target);

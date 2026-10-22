@@ -27,6 +27,7 @@ const ERRORS: Record<string, string> = {
   weak_password: `Use a new password of at least ${PASSWORD_MIN} characters (72 bytes at most).`,
   invalid_email: "Enter a valid email address.",
   same_email: "That is already your email.",
+  owner_email: "The owner email cannot be changed or claimed.",
   throttled: "A code was sent less than a minute ago. Check your inbox.",
   invalid_code: "That code is wrong or has expired. Ask for a new one.",
   email_taken: "That email now belongs to another account.",

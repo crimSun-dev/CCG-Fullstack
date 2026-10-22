@@ -8,12 +8,12 @@ const { sendError } = require('./errors');
 const STAFF_HEADER = 'x-ccg-staff-role';
 
 function permissions(role) {
-  if (role !== 'ADMIN' && role !== 'EDITOR') return null;
+  if (role !== 'OWNER' && role !== 'ADMIN' && role !== 'EDITOR') return null;
   return {
     role,
     notes: true,
     draw: true,
-    canClear: role === 'ADMIN',
+    canClear: role === 'OWNER' || role === 'ADMIN',
   };
 }
 
@@ -25,7 +25,7 @@ function staffRoleFrom(req) {
   const addr = req.socket && req.socket.remoteAddress;
   if (!isLoopback(addr)) return null;
   const role = typeof req.get === 'function' ? req.get(STAFF_HEADER) : '';
-  return role === 'ADMIN' || role === 'EDITOR' ? role : null;
+  return role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR' ? role : null;
 }
 
 function requireStaff(req, res, next) {
@@ -38,7 +38,7 @@ function requireStaff(req, res, next) {
 
 function requireClear(req, res, next) {
   if (!req.app.locals.staffGate) return next();
-  if (req.staffRole !== 'ADMIN') {
+  if (req.staffRole !== 'OWNER' && req.staffRole !== 'ADMIN') {
     return sendError(res, 403, 'forbidden', 'Only an admin can clear the board');
   }
   next();

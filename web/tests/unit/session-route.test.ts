@@ -16,7 +16,7 @@ describe("GET /api/v1/session (the nav's Sign in / Your account)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store, private");
   });
 
-  it.each(["MEMBER", "STAFF", "EDITOR", "ADMIN"] as const)("says signed in for %s, and nothing else about them", async (role) => {
+  it.each(["MEMBER", "STAFF", "EDITOR", "ADMIN", "OWNER"] as const)("says signed in for %s, and nothing else about them", async (role) => {
     current = { id: "u", email: "u@x.co", name: "Draven Chen", role };
     expect(await (await ask()).json()).toEqual({ signedIn: true });
   });

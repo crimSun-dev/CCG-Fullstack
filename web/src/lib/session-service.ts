@@ -3,12 +3,17 @@ import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { GoogleIdentity } from "./google-oidc";
 
-// MEMBER is a general visitor who registered or used Google. STAFF is granted by an ADMIN from
-// /admin/users. ADMIN and EDITOR are granted only by `pnpm admin:create`.
-export type AdminRole = "ADMIN" | "EDITOR" | "STAFF" | "MEMBER";
+// MEMBER is a general visitor who registered or used Google. STAFF is granted by ADMIN or OWNER
+// at /admin/users. ADMIN is granted only by OWNER there (or historically by `pnpm admin:create`).
+// OWNER is the site owner mailbox; EDITOR stays CLI-only.
+export type AdminRole = "OWNER" | "ADMIN" | "EDITOR" | "STAFF" | "MEMBER";
+
+// The only owner mailbox. Its role is OWNER; nobody else may change that account.
+export const OWNER_EMAIL = "draven.chen1st@gmail.com";
 
 // Every role that reads enquiries and enters CK Virtual Lab. MEMBER never does.
-export const STAFF_ROLES: readonly AdminRole[] = ["ADMIN", "EDITOR", "STAFF"];
+// ADMIN includes staff access: promoting someone to ADMIN makes them staff automatically.
+export const STAFF_ROLES: readonly AdminRole[] = ["OWNER", "ADMIN", "EDITOR", "STAFF"];
 
 export function isStaffRole(role: string): boolean {
   return (STAFF_ROLES as readonly string[]).includes(role);
@@ -28,6 +33,10 @@ export const PASSWORD_MAX_BYTES = 72;
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function isOwnerEmail(email: string): boolean {
+  return normalizeEmail(email) === OWNER_EMAIL;
 }
 
 // Loose on purpose: the emailed code is the real proof of an address.
@@ -81,17 +90,25 @@ function toAdminUser(u: { id: string; email: string; name: string; role: string 
 }
 
 export function createSessionService(prisma: PrismaClient): SessionService {
+  // The owner mailbox always stays OWNER, even if a row was created as MEMBER before the migration.
+  async function withOwnerRole(user: { id: string; email: string; name: string; role: string }) {
+    if (!isOwnerEmail(user.email) || user.role === "OWNER") return user;
+    await prisma.adminUser.update({ where: { id: user.id }, data: { role: "OWNER" } });
+    return { ...user, role: "OWNER" };
+  }
+
   // The raw token leaves this function once, in the cookie. Only its hash is stored.
   async function startSession(user: { id: string; email: string; name: string; role: string }) {
+    const ready = await withOwnerRole(user);
     const token = randomBytes(32).toString("base64url");
     await prisma.adminSession.create({
       data: {
-        userId: user.id,
+        userId: ready.id,
         tokenHash: hashToken(token),
         expiresAt: new Date(Date.now() + SESSION_TTL_SECONDS * 1000),
       },
     });
-    return { user: toAdminUser(user), token };
+    return { user: toAdminUser(ready), token };
   }
 
   return {
@@ -126,7 +143,7 @@ export function createSessionService(prisma: PrismaClient): SessionService {
         data: {
           email: normalized,
           name: normalized.split("@")[0] || "Visitor",
-          role: "MEMBER",
+          role: isOwnerEmail(normalized) ? "OWNER" : "MEMBER",
           passwordHash: await hashPassword(randomBytes(32).toString("base64url")),
           googleSub: sub,
         },
@@ -150,7 +167,12 @@ export function createSessionService(prisma: PrismaClient): SessionService {
       if (await prisma.adminUser.findUnique({ where: { email: normalized } })) return taken;
       try {
         const created = await prisma.adminUser.create({
-          data: { email: normalized, name: fullName, role: "MEMBER", passwordHash: await hashPassword(password) },
+          data: {
+            email: normalized,
+            name: fullName,
+            role: isOwnerEmail(normalized) ? "OWNER" : "MEMBER",
+            passwordHash: await hashPassword(password),
+          },
         });
         return { ok: true, ...(await startSession(created)) };
       } catch (err) {
@@ -167,7 +189,7 @@ export function createSessionService(prisma: PrismaClient): SessionService {
         include: { user: true },
       });
       if (!session || session.revokedAt || session.expiresAt <= new Date()) return null;
-      return toAdminUser(session.user);
+      return toAdminUser(await withOwnerRole(session.user));
     },
 
     async revoke(token) {

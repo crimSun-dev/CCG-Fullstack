@@ -3,8 +3,8 @@ import { adminFromRequest } from "./admin-auth";
 import { isSameOrigin, seeOther } from "./http";
 import { hashToken, SESSION_COOKIE, type AdminRole, type AdminUser } from "./session-service";
 
-// Both roles may edit program summaries, bios, and the nullable role field (TDD Section 3).
-const CAN_EDIT_CONTENT: readonly AdminRole[] = ["ADMIN", "EDITOR"];
+// OWNER, ADMIN and EDITOR may edit program summaries, bios, and the nullable role field.
+const CAN_EDIT_CONTENT: readonly AdminRole[] = ["OWNER", "ADMIN", "EDITOR"];
 
 export function canEditContent(role: string): boolean {
   return (CAN_EDIT_CONTENT as readonly string[]).includes(role);

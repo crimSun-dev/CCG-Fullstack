@@ -18,7 +18,7 @@ export type LabAssertion = {
   sub: string; // CCG account id: stable across an email change
   email: string;
   name: string;
-  role: "ADMIN" | "EDITOR" | "STAFF";
+  role: "OWNER" | "ADMIN" | "EDITOR" | "STAFF";
   // Absolute URL of the account's profile picture on this site, or null. The lab stores it on every
   // entry and shows it on the "You" chip and the account's notes (lab migration 013).
   avatar: string | null;
