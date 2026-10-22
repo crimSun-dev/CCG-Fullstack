@@ -604,6 +604,13 @@ html:not([data-motion="on"]) .hero__line { grid-column: 1 / -1; }
 
 .admin-section { margin-top: clamp(2.5rem, 6vh, 3.5rem); }
 .admin-section > p { margin-top: var(--sc-2); color: var(--sc-ink-soft); font-size: var(--sc-t-sm); max-width: 60ch; }
+.admin-search {
+  margin-top: var(--sc-5); display: flex; flex-wrap: wrap; align-items: end; gap: var(--sc-4);
+  background: #fff; border: 1px solid var(--sc-hairline); padding: var(--sc-5);
+}
+.admin-search > p { margin: 0; flex: 1 1 16rem; }
+.admin-search__actions { display: flex; flex-wrap: wrap; gap: var(--sc-3); align-items: center; flex: 0 0 auto; }
+.admin-search__actions .op-button { text-decoration: none; }
 .admin-table-wrap { margin-top: var(--sc-5); overflow-x: auto; border: 1px solid var(--sc-hairline); background: #fff; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; line-height: 1.4; }
 .admin-table th { position: sticky; top: 0; text-align: left; font-weight: 600; background: #f7f8fa; color: var(--ccg-paper-soft); white-space: nowrap; }

@@ -7,19 +7,22 @@ let current: AdminUser | null = null;
 const setStaff = vi.fn(async () => ({ ok: true }));
 vi.mock("@/lib/admin-auth", () => ({ adminFromRequest: async () => current }));
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
-vi.mock("@/lib/staff-roles", () => ({ createStaffRoles: () => ({ setStaff }) }));
+vi.mock("@/lib/staff-roles", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/staff-roles")>("@/lib/staff-roles");
+  return { ...actual, createStaffRoles: () => ({ setStaff }) };
+});
 const removeFromLab = vi.fn(async (): Promise<"removed" | "skipped" | "failed"> => "removed");
 vi.mock("@/lib/lab-removal", () => ({ removeFromLab }));
 
 const { POST } = await import("@/app/admin/users/[id]/route");
 
 const ID = "11111111-1111-4111-8111-111111111111";
-const post = (staff = true) =>
+const post = (staff = true, q?: string) =>
   POST(
     new NextRequest(`http://localhost/admin/users/${ID}`, {
       method: "POST",
       headers: { host: "localhost", "content-type": "application/x-www-form-urlencoded" },
-      body: `staff=${staff}`,
+      body: q ? `staff=${staff}&q=${encodeURIComponent(q)}` : `staff=${staff}`,
     }),
     { params: Promise.resolve({ id: ID }) },
   );
@@ -52,6 +55,12 @@ describe("POST /admin/users/[id]", () => {
     expect(res.headers.get("location")).toMatch(/\/admin\/users\?saved=granted$/);
     expect(setStaff).toHaveBeenCalledWith(current, ID, true);
     expect(removeFromLab).not.toHaveBeenCalled();
+  });
+
+  it("keeps the search query after granting staff", async () => {
+    current = user("ADMIN");
+    const res = await post(true, "draven");
+    expect(res.headers.get("location")).toBe("http://localhost/admin/users?saved=granted&q=draven");
   });
 
   it("clearing staff removes the account from CK Virtual Lab", async () => {
