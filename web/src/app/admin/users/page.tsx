@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentAdmin } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
-import { canManageRoles, createStaffRoles } from "@/lib/staff-roles";
+import { canManageRoles, cleanSearch, createStaffRoles } from "@/lib/staff-roles";
 
 export const metadata: Metadata = { title: "Accounts", robots: { index: false, follow: false } };
 
@@ -16,17 +16,21 @@ const ERRORS: Record<string, string> = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Props = { searchParams: Promise<{ saved?: string; error?: string; id?: string }> };
+type Props = { searchParams: Promise<{ saved?: string; error?: string; id?: string; q?: string }> };
 
 // Every registered account, for an ADMIN to grant or clear STAFF. Anyone else gets a 404, so the
-// list's existence is not advertised either.
+// list's existence is not advertised either. `q` narrows the list by name or email.
 export default async function UsersPage({ searchParams }: Props) {
   const admin = await currentAdmin();
   if (!admin) redirect("/login");
   if (!canManageRoles(admin.role)) notFound();
 
   const params = await searchParams;
-  const accounts = await createStaffRoles(db()).list();
+  const q = cleanSearch(params.q);
+  const accounts = await createStaffRoles(db()).list(q);
+  const keepQ = q ? (
+    <input type="hidden" name="q" value={q} />
+  ) : null;
 
   return (
     <div className="operate">
@@ -47,51 +51,80 @@ export default async function UsersPage({ searchParams }: Props) {
         {params.error === "lab_unreached" && params.id && UUID.test(params.id) && (
           <form method="post" action={`/admin/users/${params.id}`}>
             <input type="hidden" name="staff" value="false" />
+            {keepQ}
             <button type="submit">Remove from CK Virtual Lab again</button>
           </form>
         )}
 
         <section className="admin-section">
-          <h2>Registered accounts ({accounts.length})</h2>
+          <h2>Registered accounts{q ? ` matching “${q}”` : ""} ({accounts.length})</h2>
           <p>
             STAFF can read every enquiry and enter CK Virtual Lab. It changes at once, without a new sign-in. Clearing
             STAFF also removes the person from CK Virtual Lab, with their notes and bookings there.
           </p>
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Google</th>
-                  <th>Staff</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((a) => (
-                  <tr key={a.id}>
-                    <td>{a.name}</td>
-                    <td>{a.email}</td>
-                    <td>{a.role}</td>
-                    <td>{a.googleLinked ? "Linked" : ""}</td>
-                    <td>
-                      {a.id === admin.id || (a.role !== "MEMBER" && a.role !== "STAFF") ? (
-                        ""
-                      ) : (
-                        <form method="post" action={`/admin/users/${a.id}`}>
-                          <input type="hidden" name="staff" value={a.role === "STAFF" ? "false" : "true"} />
-                          <button type="submit" className={a.role === "STAFF" ? "op-quiet" : undefined}>
-                            {a.role === "STAFF" ? "Clear staff" : "Make staff"}
-                          </button>
-                        </form>
-                      )}
-                    </td>
+          <form className="admin-search" method="get" action="/admin/users" role="search">
+            <p>
+              <label>
+                Search by name or email
+                <input
+                  name="q"
+                  type="search"
+                  defaultValue={q ?? ""}
+                  placeholder="Name or email"
+                  autoComplete="off"
+                  maxLength={120}
+                />
+              </label>
+            </p>
+            <p className="admin-search__actions">
+              <button type="submit">Search</button>
+              {q && (
+                <Link className="op-quiet op-button" href="/admin/users">
+                  Clear
+                </Link>
+              )}
+            </p>
+          </form>
+          {accounts.length === 0 ? (
+            <p role="status">{q ? "No accounts match that search." : "No accounts yet."}</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Google</th>
+                    <th>Staff</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {accounts.map((a) => (
+                    <tr key={a.id}>
+                      <td>{a.name}</td>
+                      <td>{a.email}</td>
+                      <td>{a.role}</td>
+                      <td>{a.googleLinked ? "Linked" : ""}</td>
+                      <td>
+                        {a.id === admin.id || (a.role !== "MEMBER" && a.role !== "STAFF") ? (
+                          ""
+                        ) : (
+                          <form method="post" action={`/admin/users/${a.id}`}>
+                            <input type="hidden" name="staff" value={a.role === "STAFF" ? "false" : "true"} />
+                            {keepQ}
+                            <button type="submit" className={a.role === "STAFF" ? "op-quiet" : undefined}>
+                              {a.role === "STAFF" ? "Clear staff" : "Make staff"}
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       </div>
     </div>

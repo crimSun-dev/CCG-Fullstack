@@ -56,4 +56,18 @@ describe("STAFF grant", () => {
     expect(list).toHaveLength(1);
     expect(Object.keys(list[0]).sort()).toEqual(["email", "googleLinked", "id", "name", "role"]);
   });
+
+  it("searches by name or email, case-insensitive", async () => {
+    await prisma.adminUser.create({
+      data: { email: "draven.chen1st@gmail.com", name: "Draven Chen", role: "MEMBER", passwordHash: "x" },
+    });
+    await prisma.adminUser.create({
+      data: { email: "other@test.ccg", name: "Other Person", role: "STAFF", passwordHash: "x" },
+    });
+    expect((await roles.list("DRAVEN")).map((a) => a.email)).toEqual(["draven.chen1st@gmail.com"]);
+    expect((await roles.list("@gmail")).map((a) => a.email)).toEqual(["draven.chen1st@gmail.com"]);
+    expect((await roles.list("other person")).map((a) => a.email)).toEqual(["other@test.ccg"]);
+    expect(await roles.list("   ")).toHaveLength(2);
+    expect(await roles.list("nobody-here")).toEqual([]);
+  });
 });
